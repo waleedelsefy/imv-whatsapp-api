@@ -1,0 +1,79 @@
+{
+  "name": "waleedelsefy/imv-whatsapp-api",
+  "description": "A custom WordPress plugin to integrate WooCommerce with WhatsApp, providing custom API endpoints, order status notifications, and an advanced customer wallet system.",
+  "type": "wordpress-plugin",
+  "license": "GPL-2.0-or-later",
+  "keywords": [
+    "wordpress",
+    "plugin",
+    "woocommerce",
+    "whatsapp",
+    "api",
+    "chatbot",
+    "wallet",
+    "order-notifications",
+    "custom-status"
+  ],
+  "authors": [
+    {
+      "name": "Waleed Elsefy",
+      "email": "waleed@imvagency.net",
+      "homepage": "https://imvagency.net/",
+      "role": "Developer"
+    }
+  ],
+  "homepage": "https://imvagency.net/imv-whatsapp-api-plugin",
+  "support": {
+    "issues": "https://github.com/waleedelsefy/imv-whatsapp-api/issues",
+    "source": "https://github.com/waleedelsefy/imv-whatsapp-api",
+    "docs": "https://imvagency.net/imv-whatsapp-api-docs"
+  },
+  "require": {
+    "php": ">=7.4",
+    "composer/installers": "^2.0"
+  },
+  "require-dev": {
+    "wp-coding-standards/wpcs": "^3.0",
+    "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
+    "phpunit/phpunit": "^9.5",
+    "roots/wordpress": "^6.4",
+    "johnpbloch/wordpress-core-installer": "^2.1"
+  },
+  "autoload": {
+    "psr-4": {
+      "Imv\\WhatsAppApi\\": "includes/"
+    }
+  },
+  "config": {
+    "allow-plugins": {
+      "composer/installers": true,
+      "dealerdirect/phpcodesniffer-composer-installer": true,
+      "johnpbloch/wordpress-core-installer": true
+    },
+    "optimize-autoloader": true,
+    "preferred-install": "dist",
+    "sort-packages": true
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "scripts": {
+    "post-install-cmd": [
+      "@phpcs-install"
+    ],
+    "post-update-cmd": [
+      "@phpcs-install"
+    ],
+    "phpcs-install": [
+      "vendor/bin/phpcs --config-set installed_paths ../../wp-coding-standards/wpcs"
+    ],
+    "test": "vendor/bin/phpunit",
+    "lint": "vendor/bin/phpcs --standard=WordPress --extensions=php --ignore=vendor/ .",
+    "fix": "vendor/bin/phpcbf --standard=WordPress --extensions=php --ignore=vendor/ ."
+  },
+  "extra": {
+    "wordpress-plugin": {
+      "name": "IMV WhatsApp API",
+      "slug": "imv-whatsapp-api"
+    }
+  }
+}
