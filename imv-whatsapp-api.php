@@ -3,7 +3,7 @@
  * Plugin Name:       IMV WhatsApp API
  * Plugin URI:        https://imvagency.net/
  * Description:       A custom WordPress plugin to integrate WooCommerce with WhatsApp, providing custom API endpoints, order status notifications, and an advanced customer wallet system.
- * Version:           3.6
+ * Version:           3.7
  * Author:            waleed elsefy
  * Author URI:        https://imvagency.net/
  * License:           GPL v2 or later
@@ -86,4 +86,12 @@ function run_imv_whatsapp_api() {
     // Run the loader to execute all registered hooks.
     $loader->run();
 }
-run_imv_whatsapp_api();
+
+/**
+ * The main execution hook.
+ *
+ * By hooking into 'plugins_loaded', we ensure that all plugins, including WooCommerce,
+ * are loaded before our plugin's main logic runs. This is a more stable approach
+ * and prevents class loading issues.
+ */
+add_action( 'plugins_loaded', 'run_imv_whatsapp_api' );
