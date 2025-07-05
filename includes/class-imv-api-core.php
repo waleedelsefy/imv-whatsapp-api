@@ -3,9 +3,11 @@
  * Core functionalities of the plugin.
  * This includes REST API endpoint registration, custom order status, and WhatsApp notifications.
  */
-namespace Imv\WhatsAppApi;
 
-class Core {
+// Note: The namespace has been removed to ensure compatibility with other plugin classes
+// that are in the global namespace. This resolves class loading conflicts.
+
+class IMV_API_Core {
 
     public function __construct() {
         // No explicit require_once calls for WooCommerce functions here.
@@ -28,63 +30,63 @@ class Core {
         // Endpoint for checking if a customer exists.
         register_rest_route( 'imv-api/v1', '/check-customer', array(
             'methods'             => 'POST',
-            'callback'            => array( Handlers::class, 'handle_customer_check_request' ),
+            'callback'            => array( 'IMV_API_Handlers', 'handle_customer_check_request' ),
             'permission_callback' => '__return_true' // WARNING: For production, implement proper authentication.
         ) );
 
         // Endpoint for creating a new customer.
         register_rest_route( 'imv-api/v1', '/create-customer', array(
             'methods'             => 'POST',
-            'callback'            => array( Handlers::class, 'handle_customer_create_request' ),
+            'callback'            => array( 'IMV_API_Handlers', 'handle_customer_create_request' ),
             'permission_callback' => '__return_true' // WARNING: For production, implement proper authentication.
         ) );
 
         // Endpoint for creating a new order.
         register_rest_route( 'imv-api/v1', '/create-order', array(
             'methods'             => 'POST',
-            'callback'            => array( Handlers::class, 'handle_order_create_request' ),
+            'callback'            => array( 'IMV_API_Handlers', 'handle_order_create_request' ),
             'permission_callback' => '__return_true' // WARNING: For production, implement proper authentication.
         ) );
 
         // Endpoint for searching products.
         register_rest_route( 'imv-api/v1', '/search-products', array(
             'methods'             => 'POST',
-            'callback'            => array( Handlers::class, 'handle_product_search_request' ),
+            'callback'            => array( 'IMV_API_Handlers', 'handle_product_search_request' ),
             'permission_callback' => '__return_true' // WARNING: For production, implement proper authentication.
         ) );
 
         // Endpoint for checking customer wallet balance.
         register_rest_route( 'imv-api/v1', '/check-wallet', array(
             'methods'             => 'POST',
-            'callback'            => array( Wallet::class, 'handle_check_wallet_request' ),
+            'callback'            => array( 'IMV_API_Wallet', 'handle_check_wallet_request' ),
             'permission_callback' => '__return_true' // WARNING: For production, implement proper authentication.
         ) );
 
         // Endpoint for updating customer wallet balance.
         register_rest_route( 'imv-api/v1', '/update-wallet', array(
             'methods'             => 'POST',
-            'callback'            => array( Wallet::class, 'handle_update_wallet_request' ),
+            'callback'            => array( 'IMV_API_Wallet', 'handle_update_wallet_request' ),
             'permission_callback' => '__return_true' // WARNING: For production, implement proper authentication.
         ) );
 
         // Endpoint for holding funds (moving from available to pending).
         register_rest_route( 'imv-api/v1', '/hold-balance', array(
             'methods'             => 'POST',
-            'callback'            => array( Wallet::class, 'handle_hold_balance_request' ),
+            'callback'            => array( 'IMV_API_Wallet', 'handle_hold_balance_request' ),
             'permission_callback' => '__return_true' // WARNING: For production, implement proper authentication.
         ) );
 
         // Endpoint for releasing held funds (moving from pending back to available).
         register_rest_route( 'imv-api/v1', '/release-balance', array(
             'methods'             => 'POST',
-            'callback'            => array( Wallet::class, 'handle_release_balance_request' ),
+            'callback'            => array( 'IMV_API_Wallet', 'handle_release_balance_request' ),
             'permission_callback' => '__return_true' // WARNING: For production, implement proper authentication.
         ) );
 
         // Endpoint for deducting from pending balance.
         register_rest_route( 'imv-api/v1', '/deduct-pending', array(
             'methods'             => 'POST',
-            'callback'            => array( Wallet::class, 'handle_deduct_pending_balance_request' ),
+            'callback'            => array( 'IMV_API_Wallet', 'handle_deduct_pending_balance_request' ),
             'permission_callback' => '__return_true' // WARNING: For production, implement proper authentication.
         ) );
     }
@@ -129,13 +131,13 @@ class Core {
      * @param WC_Order $order      The order object.
      */
     public function send_direct_whatsapp_notification( $order_id, $old_status, $new_status, $order ) {
-        Logger::log("Order #{$order_id}: Status changed from '{$old_status}' to '{$new_status}'. Preparing WhatsApp notification.");
+        IMV_API_Logger::log("Order #{$order_id}: Status changed from '{$old_status}' to '{$new_status}'. Preparing WhatsApp notification.");
 
         $api_url = get_option('imv_api_notification_url');
         $api_token = get_option('imv_api_token');
 
         if ( empty($api_url) || empty($api_token) ) {
-            Logger::log("API URL or Token is not set. Skipping WhatsApp notification.");
+            IMV_API_Logger::log("API URL or Token is not set. Skipping WhatsApp notification.");
             return;
         }
 
@@ -174,15 +176,15 @@ class Core {
         }
 
         if ( empty($message_body) ) {
-            Logger::log("No message template for status '{$new_status}'. Skipping.");
+            IMV_API_Logger::log("No message template for status '{$new_status}'. Skipping.");
             return;
         }
 
         $raw_phone = $order->get_billing_phone();
-        $formatted_phone = Helpers::format_phone_number_for_meta($raw_phone);
+        $formatted_phone = IMV_API_Helpers::format_phone_number_for_meta($raw_phone);
 
         if (empty($formatted_phone)) {
-            Logger::log("Could not format a valid phone number from '{$raw_phone}' for Order #{$order_id}. Skipping.");
+            IMV_API_Logger::log("Could not format a valid phone number from '{$raw_phone}' for Order #{$order_id}. Skipping.");
             return;
         }
 
@@ -204,11 +206,11 @@ class Core {
         ));
 
         if ( is_wp_error($response) ) {
-            Logger::log("API call failed for Order #{$order_id}. Error: " . $response->get_error_message());
+            IMV_API_Logger::log("API call failed for Order #{$order_id}. Error: " . $response->get_error_message());
         } else {
             $response_code = wp_remote_retrieve_response_code($response);
             $response_body = wp_remote_retrieve_body($response);
-            Logger::log("API call for Order #{$order_id} sent. Response code: {$response_code}. Body: " . $response_body);
+            IMV_API_Logger::log("API call for Order #{$order_id} sent. Response code: {$response_code}. Body: " . $response_body);
         }
     }
 }
