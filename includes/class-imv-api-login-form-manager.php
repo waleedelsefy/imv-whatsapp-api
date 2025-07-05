@@ -6,6 +6,7 @@
 class IMV_API_Login_Form_Manager {
 
     private static $form_rendered = false;
+    private static $autologin_processed = false;
 
     /**
      * Enqueues the necessary scripts and styles for the OTP login form.
@@ -103,17 +104,13 @@ class IMV_API_Login_Form_Manager {
     }
 
     /**
-     * NEW: Generates a secure, single-use token for auto-login links.
-     *
-     * @param int $user_id The ID of the user to generate the token for.
-     * @return string|false The generated token, or false on failure.
+     * Generates a secure, single-use token for auto-login links.
      */
     public static function generate_autologin_token( $user_id ) {
         if ( ! $user_id || ! get_user_by('id', $user_id) ) {
             return false;
         }
         $token = wp_generate_password( 32, false );
-        // Token is valid for 15 minutes
         $expires = time() + (15 * 60);
 
         update_user_meta( $user_id, '_imv_autologin_token', $token );
@@ -124,11 +121,11 @@ class IMV_API_Login_Form_Manager {
     }
 
     /**
-     * NEW: Handles auto-login requests by verifying a token from the URL.
-     * This is hooked to 'init' to run on every page load.
+     * Hooked to 'init' @ priority 1.
+     * Verifies the token and logs the user in, but does not redirect.
      */
     public function handle_autologin_token_verification() {
-        if ( is_admin() || is_user_logged_in() || ! isset( $_GET['imv_autologin'] ) || ! isset( $_GET['uid'] ) ) {
+        if ( is_user_logged_in() || ! isset( $_GET['imv_autologin'] ) || ! isset( $_GET['uid'] ) ) {
             return;
         }
 
@@ -143,15 +140,23 @@ class IMV_API_Login_Form_Manager {
         $expires = get_user_meta( $user_id, '_imv_autologin_token_expires', true );
 
         if ( ! empty( $stored_token ) && hash_equals( $stored_token, $token_from_url ) && time() < $expires ) {
-            // Token is valid. Log the user in.
             wp_set_current_user( $user_id );
             wp_set_auth_cookie( $user_id, true );
 
-            // Invalidate the token so it can't be used again.
             delete_user_meta( $user_id, '_imv_autologin_token' );
             delete_user_meta( $user_id, '_imv_autologin_token_expires' );
 
-            // Redirect to the same URL but without the token parameters for security.
+            self::$autologin_processed = true;
+            IMV_API_Logger::log("Auto-login successful for user #{$user_id}. Awaiting redirect.");
+        }
+    }
+
+    /**
+     * Hooked to 'template_redirect'.
+     * Redirects the user to a clean URL after a successful auto-login.
+     */
+    public function redirect_after_autologin() {
+        if ( self::$autologin_processed ) {
             $redirect_url = remove_query_arg( array( 'imv_autologin', 'uid' ) );
             wp_safe_redirect( $redirect_url );
             exit;
