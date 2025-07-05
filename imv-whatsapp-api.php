@@ -112,7 +112,7 @@ final class IMV_WhatsApp_API_Main {
         require_once IMV_API_PLUGIN_DIR . 'includes/class-imv-api-logger.php';
         require_once IMV_API_PLUGIN_DIR . 'includes/class-imv-api-helpers.php';
         require_once IMV_API_PLUGIN_DIR . 'includes/class-imv-api-otp-manager.php';
-        require_once IMV_API_PLUGIN_DIR . 'includes/class-imv-api-login-form-manager.php';
+     //   require_once IMV_API_PLUGIN_DIR . 'includes/class-imv-api-login-form-manager.php';
     }
 
     private function define_hooks() {
@@ -139,10 +139,10 @@ final class IMV_WhatsApp_API_Main {
         $this->loader->add_action( 'admin_init', $this->admin, 'settings_init' );
 
         // OTP Login Form Manager Hooks
-        $this->loader->add_action( 'wp_enqueue_scripts', $this->login_manager, 'enqueue_scripts' );
-        $this->loader->add_action( 'woocommerce_login_form_start', $this->login_manager, 'render_otp_login_form' );
-        $this->loader->add_action( 'wp_ajax_nopriv_imv_request_otp', $this->login_manager, 'ajax_request_otp' );
-        $this->loader->add_action( 'wp_ajax_nopriv_imv_verify_otp_and_login', $this->login_manager, 'ajax_verify_otp_and_login' );
+      //  $this->loader->add_action( 'wp_enqueue_scripts', $this->login_manager, 'enqueue_scripts' );
+       // $this->loader->add_action( 'woocommerce_login_form_start', $this->login_manager, 'render_otp_login_form' );
+        //$this->loader->add_action( 'wp_ajax_nopriv_imv_request_otp', $this->login_manager, 'ajax_request_otp' );
+        //$this->loader->add_action( 'wp_ajax_nopriv_imv_verify_otp_and_login', $this->login_manager, 'ajax_verify_otp_and_login' );
     }
 }
 
