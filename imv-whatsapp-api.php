@@ -63,6 +63,7 @@ final class IMV_WhatsApp_API_Main {
         require_once IMV_API_PLUGIN_DIR . 'includes/class-imv-api-admin.php';
         require_once IMV_API_PLUGIN_DIR . 'includes/class-imv-api-logger.php';
         require_once IMV_API_PLUGIN_DIR . 'includes/class-imv-api-helpers.php';
+        require_once IMV_API_PLUGIN_DIR . 'includes/class-imv-api-otp-manager.php';
     }
 
     private function define_hooks( $loader, $core, $wallet, $admin ) {
