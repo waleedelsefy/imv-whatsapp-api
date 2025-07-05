@@ -3,7 +3,7 @@
  * Plugin Name:       IMV WhatsApp API
  * Plugin URI:        https://imvagency.net/
  * Description:       A custom WordPress plugin to integrate WooCommerce with WhatsApp, providing custom API endpoints, order status notifications, and an advanced customer wallet system with OTP login.
- * Version:           5.1
+ * Version:           5.2
  * Author:            waleed elsefy
  * Author URI:        https://imvagency.net/
  * License:           GPL v2 or later
@@ -42,8 +42,8 @@ final class IMV_WhatsApp_API_Main {
         $core = new IMV_API_Core();
         $wallet = new IMV_API_Wallet();
         $admin = new IMV_API_Admin();
-        $login_manager = new IMV_API_Login_Form_Manager(); // Instantiate the new class
-        $this->define_hooks( $loader, $core, $wallet, $admin, $login_manager ); // Pass it to the hooks definition
+        $login_manager = new IMV_API_Login_Form_Manager();
+        $this->define_hooks( $loader, $core, $wallet, $admin, $login_manager );
         $loader->run();
     }
 
@@ -56,7 +56,7 @@ final class IMV_WhatsApp_API_Main {
         require_once IMV_API_PLUGIN_DIR . 'includes/class-imv-api-logger.php';
         require_once IMV_API_PLUGIN_DIR . 'includes/class-imv-api-helpers.php';
         require_once IMV_API_PLUGIN_DIR . 'includes/class-imv-api-otp-manager.php';
-        require_once IMV_API_PLUGIN_DIR . 'includes/class-imv-api-login-form-manager.php'; // Load the new class
+        require_once IMV_API_PLUGIN_DIR . 'includes/class-imv-api-login-form-manager.php';
     }
 
     private function define_hooks( $loader, $core, $wallet, $admin, $login_manager ) {
@@ -69,7 +69,12 @@ final class IMV_WhatsApp_API_Main {
 
         // Wallet
         $loader->add_action( 'user_register', $wallet, 'initialize_customer_wallet' );
-        // ... (other wallet hooks) ...
+        $loader->add_action( 'woocommerce_created_customer', $wallet, 'initialize_customer_wallet_on_api_create', 10, 1 );
+        $loader->add_action( 'show_user_profile', $wallet, 'add_wallet_fields_to_user_profile' );
+        $loader->add_action( 'edit_user_profile', $wallet, 'add_wallet_fields_to_user_profile' );
+        $loader->add_action( 'personal_options_update', $wallet, 'save_wallet_fields_from_user_profile' );
+        $loader->add_action( 'edit_user_profile_update', $wallet, 'save_wallet_fields_from_user_profile' );
+        $loader->add_action( 'woocommerce_order_status_changed', $wallet, 'deduct_from_pending_on_order_completion', 15, 4 );
         $loader->add_action( 'woocommerce_order_status_completed', $wallet, 'add_funds_on_topup_order_completion', 10, 1 );
         $loader->add_action( 'woocommerce_subscription_payment_complete', $wallet, 'add_funds_from_subscription', 10, 1 );
 
