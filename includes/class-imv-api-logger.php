@@ -1,5 +1,4 @@
 <?php
-namespace Imv\WhatsAppApi;
 
 /**
  * Handles the plugin's logging system.

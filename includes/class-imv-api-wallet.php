@@ -1,5 +1,4 @@
 <?php
-namespace Imv\WhatsAppApi;
 
 /**
  * Handles all wallet-related functionalities:
