@@ -1,13 +1,10 @@
 <?php
 /**
- * Manages the replacement of the default WooCommerce login form with an OTP-based system.
+ * Manages the replacement of the default WooCommerce login form with an OTP-based system
+ * and handles auto-login token functionality.
  */
 class IMV_API_Login_Form_Manager {
 
-    /**
-     * A flag to ensure the form is rendered only once per page load.
-     * @var bool
-     */
     private static $form_rendered = false;
 
     /**
@@ -15,8 +12,8 @@ class IMV_API_Login_Form_Manager {
      */
     public function enqueue_scripts() {
         if ( function_exists('is_account_page') && is_account_page() && ! is_user_logged_in() ) {
-            wp_enqueue_style( 'imv-otp-login-css', plugin_dir_url( __DIR__ ) . 'public/css/imv-otp-login.css', array(), '1.1.0' );
-            wp_enqueue_script( 'imv-otp-login-js', plugin_dir_url( __DIR__ ) . 'public/js/imv-otp-login.js', array('jquery'), '1.1.0', true );
+            wp_enqueue_style( 'imv-otp-login-css', plugin_dir_url( __DIR__ ) . 'public/css/imv-otp-login.css', array(), '1.2.0' );
+            wp_enqueue_script( 'imv-otp-login-js', plugin_dir_url( __DIR__ ) . 'public/js/imv-otp-login.js', array('jquery'), '1.2.0', true );
             wp_localize_script('imv-otp-login-js', 'imv_otp_ajax', array(
                 'ajax_url' => admin_url('admin-ajax.php'),
                 'nonce'    => wp_create_nonce('imv_otp_nonce'),
@@ -35,13 +32,12 @@ class IMV_API_Login_Form_Manager {
 
     /**
      * Renders the custom OTP login form structure.
-     * Uses a static flag to prevent rendering more than once.
      */
     public function render_otp_login_form() {
         if ( is_user_logged_in() || self::$form_rendered ) {
             return;
         }
-        self::$form_rendered = true; // Set the flag to true after first render
+        self::$form_rendered = true;
         ?>
         <div id="imv-otp-login-wrapper">
             <div id="imv-phone-step">
@@ -104,5 +100,61 @@ class IMV_API_Login_Form_Manager {
             'message' => __('Login successful! Redirecting...', 'imv-api'),
             'redirect' => wc_get_page_permalink('myaccount')
         ));
+    }
+
+    /**
+     * NEW: Generates a secure, single-use token for auto-login links.
+     *
+     * @param int $user_id The ID of the user to generate the token for.
+     * @return string|false The generated token, or false on failure.
+     */
+    public static function generate_autologin_token( $user_id ) {
+        if ( ! $user_id || ! get_user_by('id', $user_id) ) {
+            return false;
+        }
+        $token = wp_generate_password( 32, false );
+        // Token is valid for 15 minutes
+        $expires = time() + (15 * 60);
+
+        update_user_meta( $user_id, '_imv_autologin_token', $token );
+        update_user_meta( $user_id, '_imv_autologin_token_expires', $expires );
+
+        IMV_API_Logger::log("Generated autologin token for user #{$user_id}.");
+        return $token;
+    }
+
+    /**
+     * NEW: Handles auto-login requests by verifying a token from the URL.
+     * This is hooked to 'init' to run on every page load.
+     */
+    public function handle_autologin_token_verification() {
+        if ( is_admin() || is_user_logged_in() || ! isset( $_GET['imv_autologin'] ) || ! isset( $_GET['uid'] ) ) {
+            return;
+        }
+
+        $user_id = absint( $_GET['uid'] );
+        $token_from_url = sanitize_key( $_GET['imv_autologin'] );
+
+        if ( ! $user_id || empty( $token_from_url ) ) {
+            return;
+        }
+
+        $stored_token = get_user_meta( $user_id, '_imv_autologin_token', true );
+        $expires = get_user_meta( $user_id, '_imv_autologin_token_expires', true );
+
+        if ( ! empty( $stored_token ) && hash_equals( $stored_token, $token_from_url ) && time() < $expires ) {
+            // Token is valid. Log the user in.
+            wp_set_current_user( $user_id );
+            wp_set_auth_cookie( $user_id, true );
+
+            // Invalidate the token so it can't be used again.
+            delete_user_meta( $user_id, '_imv_autologin_token' );
+            delete_user_meta( $user_id, '_imv_autologin_token_expires' );
+
+            // Redirect to the same URL but without the token parameters for security.
+            $redirect_url = remove_query_arg( array( 'imv_autologin', 'uid' ) );
+            wp_safe_redirect( $redirect_url );
+            exit;
+        }
     }
 }

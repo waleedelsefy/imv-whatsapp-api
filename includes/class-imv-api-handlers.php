@@ -191,7 +191,6 @@ class IMV_API_Handlers {
             return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Phone number and product SKU are required.' ), 400 );
         }
 
-        // 1. Find the customer
         $users = get_users( array( 'meta_key' => 'billing_phone', 'meta_value' => $phone, 'number' => 1 ) );
         if ( empty($users) ) {
             return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Customer not found.' ), 404 );
@@ -199,69 +198,54 @@ class IMV_API_Handlers {
         $customer = $users[0];
         $customer_id = $customer->ID;
 
-        // 2. Find the product by SKU
         $product_id = wc_get_product_id_by_sku( $sku );
         if ( ! $product_id ) {
             return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Product with the specified SKU not found.' ), 404 );
         }
         $product = wc_get_product( $product_id );
 
-        // 3. Verify it's a valid top-up product
         if ( ! has_term( 'wallet-top-up', 'product_cat', $product_id ) ) {
             return new WP_REST_Response( array( 'status' => 'error', 'message' => 'The specified product is not a valid wallet top-up product.' ), 400 );
         }
 
         try {
-            // 4. Create a new order with 'pending' status
             $order = wc_create_order( array( 'customer_id' => $customer_id ) );
             $order->add_product( $product, 1 );
-            $address = array(
-                'first_name' => $customer->first_name,
-                'last_name'  => $customer->last_name,
-                'phone'      => $phone,
-                'email'      => $customer->user_email,
-            );
+            $address = array( 'first_name' => $customer->first_name, 'last_name'  => $customer->last_name, 'phone' => $phone, 'email' => $customer->user_email );
             $order->set_address( $address, 'billing' );
             $order->calculate_totals();
             $order->update_status( 'pending', __( 'Awaiting payment for wallet top-up via API.', 'imv-api' ) );
 
-            // 5. Generate a payment link for the order
             $payment_link = $order->get_checkout_payment_url();
-            $order_id = $order->get_id();
 
-            // 6. Create a clean, bilingual message and send it via WhatsApp
+            // Generate an auto-login token and append it to the payment link
+            $autologin_token = IMV_API_Login_Form_Manager::generate_autologin_token( $customer_id );
+            if ( $autologin_token ) {
+                $payment_link = add_query_arg( array(
+                    'imv_autologin' => $autologin_token,
+                    'uid'           => $customer_id,
+                ), $payment_link );
+            }
+
+            $order_id = $order->get_id();
             $customer_name = $customer->first_name;
-            // Get the formatted price, then strip tags and decode HTML entities
-            $formatted_price = wc_price( $order->get_total(), array('currency' => $order->get_currency()) );
-            $clean_price = html_entity_decode( wp_strip_all_tags( $formatted_price ) );
+            $clean_price = html_entity_decode( wp_strip_all_tags( wc_price( $order->get_total(), array('currency' => $order->get_currency()) ) ) );
 
             $message_body = sprintf(
                 "مرحباً %s،\nلإتمام شحن محفظتك بقيمة %s، يرجى استخدام الرابط التالي:\n%s\n\n---\n\nHello %s,\nTo complete your wallet top-up of %s, please use the following link:\n%s",
-                $customer_name,
-                $clean_price,
-                $payment_link,
-                $customer_name,
-                $clean_price,
-                $payment_link
+                $customer_name, $clean_price, $payment_link, $customer_name, $clean_price, $payment_link
             );
 
-            // Send the message with URL preview disabled for a cleaner look
             IMV_API_Helpers::send_whatsapp_message( $phone, $message_body, false );
 
-            $response_data = array(
+            return new WP_REST_Response( array(
                 'status'  => 'success',
-                'data'    => array(
-                    'order_id'      => $order_id,
-                    'payment_link'  => $payment_link,
-                    'message'       => 'Wallet top-up order created and a payment link has been sent to the customer.',
-                    'customer_id'   => $customer_id,
-                )
-            );
-            return new WP_REST_Response( $response_data, 201 );
+                'data'    => array( 'order_id' => $order_id, 'payment_link'  => $payment_link, 'message' => 'Auto-login payment link has been sent to the customer.', 'customer_id' => $customer_id )
+            ), 201 );
 
         } catch ( Exception $e ) {
             IMV_API_Logger::log( 'Error creating top-up order via API: ' . $e->getMessage() );
-            return new WP_REST_Response( array( 'status' => 'error', 'message' => 'An internal error occurred while creating the top-up order.' ), 500 );
+            return new WP_REST_Response( array( 'status' => 'error', 'message' => 'An internal error occurred.' ), 500 );
         }
     }
     }
