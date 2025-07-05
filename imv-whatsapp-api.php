@@ -3,7 +3,7 @@
  * Plugin Name:       IMV WhatsApp API
  * Plugin URI:        https://imvagency.net/
  * Description:       A custom WordPress plugin to integrate WooCommerce with WhatsApp, providing custom API endpoints, order status notifications, and an advanced customer wallet system with OTP login.
- * Version:           5.7
+ * Version:           5.8
  * Author:            waleed elsefy
  * Author URI:        https://imvagency.net/
  * License:           GPL v2 or later
@@ -29,7 +29,14 @@ final class IMV_WhatsApp_API_Main {
     }
 
     private function __construct() {
+        // We still init the main plugin on 'init'
         add_action( 'init', array( $this, 'init' ) );
+
+        // However, we hook the auto-login function separately and earlier if needed.
+        // Let's load dependencies and hook the auto-login function right away.
+        $this->load_dependencies();
+        $login_manager = new IMV_API_Login_Form_Manager();
+        add_action( 'init', array( $login_manager, 'handle_autologin_token_verification' ), 1 );
     }
 
     public function init() {
@@ -37,12 +44,13 @@ final class IMV_WhatsApp_API_Main {
             add_action( 'admin_notices', array( $this, 'admin_notice_missing_woocommerce' ) );
             return;
         }
-        $this->load_dependencies();
+
         $loader = new IMV_API_Loader();
         $core = new IMV_API_Core();
         $wallet = new IMV_API_Wallet();
         $admin = new IMV_API_Admin();
-        $login_manager = new IMV_API_Login_Form_Manager();
+        $login_manager = new IMV_API_Login_Form_Manager(); // Re-instantiate for other hooks
+
         $this->define_hooks( $loader, $core, $wallet, $admin, $login_manager );
         $loader->run();
     }
@@ -87,9 +95,6 @@ final class IMV_WhatsApp_API_Main {
         $loader->add_action( 'woocommerce_login_form_start', $login_manager, 'render_otp_login_form' );
         $loader->add_action( 'wp_ajax_nopriv_imv_request_otp', $login_manager, 'ajax_request_otp' );
         $loader->add_action( 'wp_ajax_nopriv_imv_verify_otp_and_login', $login_manager, 'ajax_verify_otp_and_login' );
-
-        // ** UPDATED HOOK **: Use 'wp' hook to run after query is parsed but before template is loaded.
-        $loader->add_action( 'wp', $login_manager, 'handle_autologin_token_verification' );
     }
 
     public function admin_notice_missing_woocommerce() {
