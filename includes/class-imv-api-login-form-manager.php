@@ -6,15 +6,14 @@
 class IMV_API_Login_Form_Manager {
 
     private static $form_rendered = false;
-    private static $autologin_processed = false;
 
     /**
      * Enqueues the necessary scripts and styles for the OTP login form.
      */
     public function enqueue_scripts() {
         if ( function_exists('is_account_page') && is_account_page() && ! is_user_logged_in() ) {
-            wp_enqueue_style( 'imv-otp-login-css', plugin_dir_url( __DIR__ ) . 'public/css/imv-otp-login.css', array(), '1.2.0' );
-            wp_enqueue_script( 'imv-otp-login-js', plugin_dir_url( __DIR__ ) . 'public/js/imv-otp-login.js', array('jquery'), '1.2.0', true );
+            wp_enqueue_style( 'imv-otp-login-css', plugin_dir_url( __DIR__ ) . 'public/css/imv-otp-login.css', array(), '1.3.0' );
+            wp_enqueue_script( 'imv-otp-login-js', plugin_dir_url( __DIR__ ) . 'public/js/imv-otp-login.js', array('jquery'), '1.3.0', true );
             wp_localize_script('imv-otp-login-js', 'imv_otp_ajax', array(
                 'ajax_url' => admin_url('admin-ajax.php'),
                 'nonce'    => wp_create_nonce('imv_otp_nonce'),
@@ -121,56 +120,49 @@ class IMV_API_Login_Form_Manager {
     }
 
     /**
-     * Hooked to 'init' @ priority 1.
-     * Verifies the token and logs the user in, but does not redirect.
+     * NEW: Central function to handle auto-login and disable login form on payment page.
+     * Hooked to 'template_redirect' with a high priority to run before WooCommerce checks for login.
      */
-    public function handle_autologin_token_verification() {
-        if ( is_user_logged_in() || ! isset( $_GET['imv_autologin'] ) || ! isset( $_GET['uid'] ) ) {
+    public function setup_payment_page_autologin() {
+        // We only care about the order-pay page
+        if ( ! function_exists('is_checkout_pay_page') || ! is_checkout_pay_page() ) {
             return;
         }
 
-        $user_id = absint( $_GET['uid'] );
-        $token_from_url = sanitize_key( $_GET['imv_autologin'] );
+        // Always allow payment on this page without login if a valid key is present.
+        // This prevents the login form from showing up for guests with a link.
+        add_filter( 'woocommerce_login_form_required', '__return_false' );
 
-        if ( ! $user_id || empty( $token_from_url ) ) {
-            return;
-        }
+        // Now, attempt auto-login if the user is not logged in and the token is present
+        if ( ! is_user_logged_in() && isset( $_GET['imv_autologin'], $_GET['uid'] ) ) {
+            $user_id = absint( $_GET['uid'] );
+            $token_from_url = sanitize_key( $_GET['imv_autologin'] );
 
-        $stored_token = get_user_meta( $user_id, '_imv_autologin_token', true );
-        $expires = get_user_meta( $user_id, '_imv_autologin_token_expires', true );
+            if ( ! $user_id || empty( $token_from_url ) ) {
+                return;
+            }
 
-        if ( ! empty( $stored_token ) && hash_equals( $stored_token, $token_from_url ) && time() < $expires ) {
-            wp_set_current_user( $user_id );
-            wp_set_auth_cookie( $user_id, true );
+            $stored_token = get_user_meta( $user_id, '_imv_autologin_token', true );
+            $expires = get_user_meta( $user_id, '_imv_autologin_token_expires', true );
 
-            delete_user_meta( $user_id, '_imv_autologin_token' );
-            delete_user_meta( $user_id, '_imv_autologin_token_expires' );
+            if ( ! empty( $stored_token ) && hash_equals( $stored_token, $token_from_url ) && time() < $expires ) {
+                // Token is valid. Log the user in.
+                wp_set_current_user( $user_id );
+                wp_set_auth_cookie( $user_id, true );
 
-            self::$autologin_processed = true;
-            IMV_API_Logger::log("Auto-login successful for user #{$user_id}. Awaiting redirect.");
-        }
-    }
+                // Invalidate the token
+                delete_user_meta( $user_id, '_imv_autologin_token' );
+                delete_user_meta( $user_id, '_imv_autologin_token_expires' );
 
-    /**
-     * Hooked to 'template_redirect'.
-     * Redirects the user to a clean URL after a successful auto-login.
-     */
-    public function redirect_after_autologin() {
-        if ( self::$autologin_processed ) {
-            $redirect_url = remove_query_arg( array( 'imv_autologin', 'uid' ) );
-            wp_safe_redirect( $redirect_url );
-            exit;
-        }
-    }
+                IMV_API_Logger::log("Auto-login successful for user #{$user_id}. Redirecting to clean URL.");
 
-    /**
-     * NEW: Disables the mandatory login form on the order-pay page.
-     * This allows guests to pay for an order using the secure key, even if the order
-     * is assigned to a registered user.
-     */
-    public function disable_login_on_payment_page() {
-        if ( function_exists('is_checkout_pay_page') && is_checkout_pay_page() ) {
-            add_filter( 'woocommerce_login_form_required', '__return_false' );
+                // Redirect to a clean URL to remove the token from the address bar
+                $redirect_url = remove_query_arg( array( 'imv_autologin', 'uid' ) );
+                wp_safe_redirect( $redirect_url );
+                exit;
+            } else {
+                IMV_API_Logger::log("Auto-login failed for user #{$user_id}. Token invalid or expired.");
+            }
         }
     }
 }
