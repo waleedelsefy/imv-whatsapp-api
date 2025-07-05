@@ -11,18 +11,12 @@ class IMV_API_Core {
     }
 
     public function register_api_endpoints() {
-        // --- Customer & OTP Login Endpoints ---
+        // --- Customer Endpoints ---
         register_rest_route( 'imv-api/v1', '/check-customer', array(
             'methods' => 'POST', 'callback' => array( 'IMV_API_Handlers', 'handle_customer_check_request' ), 'permission_callback' => '__return_true'
         ) );
         register_rest_route( 'imv-api/v1', '/create-customer', array(
             'methods' => 'POST', 'callback' => array( 'IMV_API_Handlers', 'handle_customer_create_request' ), 'permission_callback' => '__return_true'
-        ) );
-        register_rest_route( 'imv-api/v1', '/request-otp', array(
-            'methods' => 'POST', 'callback' => array( 'IMV_API_OTP_Manager', 'handle_otp_request' ), 'permission_callback' => '__return_true'
-        ) );
-        register_rest_route( 'imv-api/v1', '/verify-otp', array(
-            'methods' => 'POST', 'callback' => array( 'IMV_API_OTP_Manager', 'handle_otp_verification' ), 'permission_callback' => '__return_true'
         ) );
 
         // --- Product & Order Endpoints ---

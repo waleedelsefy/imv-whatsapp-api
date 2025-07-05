@@ -217,30 +217,22 @@ class IMV_API_Handlers {
             $order->update_status( 'pending', __( 'Awaiting payment for wallet top-up via API.', 'imv-api' ) );
 
             $payment_link = $order->get_checkout_payment_url();
-
-            // Generate an auto-login token and append it to the payment link
-            $autologin_token = IMV_API_Login_Form_Manager::generate_autologin_token( $customer_id );
-            if ( $autologin_token ) {
-                $payment_link = add_query_arg( array(
-                    'imv_autologin' => $autologin_token,
-                    'uid'           => $customer_id,
-                ), $payment_link );
-            }
-
             $order_id = $order->get_id();
+
+            $short_payment_link = IMV_API_Helpers::shorten_url( $payment_link );
             $customer_name = $customer->first_name;
             $clean_price = html_entity_decode( wp_strip_all_tags( wc_price( $order->get_total(), array('currency' => $order->get_currency()) ) ) );
 
             $message_body = sprintf(
                 "مرحباً %s،\nلإتمام شحن محفظتك بقيمة %s، يرجى استخدام الرابط التالي:\n%s\n\n---\n\nHello %s,\nTo complete your wallet top-up of %s, please use the following link:\n%s",
-                $customer_name, $clean_price, $payment_link, $customer_name, $clean_price, $payment_link
+                $customer_name, $clean_price, $short_payment_link, $customer_name, $clean_price, $short_payment_link
             );
 
             IMV_API_Helpers::send_whatsapp_message( $phone, $message_body, false );
 
             return new WP_REST_Response( array(
                 'status'  => 'success',
-                'data'    => array( 'order_id' => $order_id, 'payment_link'  => $payment_link, 'message' => 'Auto-login payment link has been sent to the customer.', 'customer_id' => $customer_id )
+                'data'    => array( 'order_id' => $order_id, 'payment_link'  => $short_payment_link, 'message' => 'Payment link has been sent to the customer.', 'customer_id' => $customer_id )
             ), 201 );
 
         } catch ( Exception $e ) {
@@ -248,4 +240,5 @@ class IMV_API_Handlers {
             return new WP_REST_Response( array( 'status' => 'error', 'message' => 'An internal error occurred.' ), 500 );
         }
     }
-    }
+
+}
