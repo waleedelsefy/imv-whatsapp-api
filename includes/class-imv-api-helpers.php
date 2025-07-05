@@ -6,8 +6,6 @@ class IMV_API_Helpers {
 
     /**
      * Removes all non-numeric characters from a phone number string.
-     * @param string $phone_number The raw phone number.
-     * @return string The cleaned phone number.
      */
     public static function clean_phone_number($phone_number) {
         return preg_replace('/[^0-9]/', '', $phone_number);
@@ -15,8 +13,6 @@ class IMV_API_Helpers {
 
     /**
      * Formats a phone number to be compliant with Meta's API.
-     * @param string $phone_number The raw phone number.
-     * @return string The formatted phone number, or an empty string if invalid.
      */
     public static function format_phone_number_for_meta($phone_number) {
         $cleaned_number = self::clean_phone_number($phone_number);
@@ -33,9 +29,7 @@ class IMV_API_Helpers {
     }
 
     /**
-     * Detects the country from a cleaned phone number based on its prefix.
-     * @param string $cleaned_phone_number The phone number with only digits.
-     * @return string|null The two-letter ISO country code, or null if not found.
+     * Detects the country from a cleaned phone number.
      */
     public static function get_country_from_phone($cleaned_phone_number) {
         $country_codes = array( '20' => 'EG', '966' => 'SA', '965' => 'KW', '971' => 'AE', '974' => 'QA', '973' => 'BH', '968' => 'OM' );
@@ -47,13 +41,9 @@ class IMV_API_Helpers {
     }
 
     /**
-     * NEW: Central function to send a WhatsApp message.
-     *
-     * @param string $recipient_phone The raw phone number of the recipient.
-     * @param string $message_body The text of the message to be sent.
-     * @return bool True on success, false on failure.
+     * Central function to send a WhatsApp message.
      */
-    public static function send_whatsapp_message( $recipient_phone, $message_body ) {
+    public static function send_whatsapp_message( $recipient_phone, $message_body, $preview_url = true ) {
         $api_url = get_option('imv_api_notification_url');
         $api_token = get_option('imv_api_token');
 
@@ -68,7 +58,11 @@ class IMV_API_Helpers {
             return false;
         }
 
-        $messageObject = array( "to" => $formatted_phone, "type" => "text", "text" => array( "preview_url" => true, "body" => $message_body ) );
+        $messageObject = array(
+            "to" => $formatted_phone,
+            "type" => "text",
+            "text" => array( "preview_url" => $preview_url, "body" => $message_body )
+        );
         $request_body = array( "messageObject" => $messageObject );
         $full_api_url = rtrim($api_url, '/') . '/api/v1/send-message?token=' . $api_token;
 
@@ -88,5 +82,49 @@ class IMV_API_Helpers {
             IMV_API_Logger::log("WhatsApp API call sent to {$formatted_phone}. Response code: {$response_code}.");
             return $response_code >= 200 && $response_code < 300;
         }
+    }
+
+    /**
+     * NEW: Shortens a URL using an external service (e.g., Bitly).
+     * NOTE: You MUST replace the placeholder API endpoint and key with your actual service details.
+     *
+     * @param string $long_url The URL to shorten.
+     * @return string The shortened URL, or the original URL on failure.
+     */
+    public static function shorten_url( $long_url ) {
+        // ** ACTION REQUIRED: Replace with your URL shortener service details **
+        // Example for Bitly:
+        $api_url = 'https://api-ssl.bitly.com/v4/shorten';
+        $api_key = 'YOUR_BITLY_API_KEY'; // <-- REPLACE THIS WITH YOUR ACTUAL BITLY KEY
+
+        if ( 'YOUR_BITLY_API_KEY' === $api_key ) {
+            IMV_API_Logger::log("URL Shortener not configured. Returning original URL.");
+            return $long_url;
+        }
+
+        $response = wp_remote_post( $api_url, array(
+            'method'    => 'POST',
+            'headers'   => array(
+                'Authorization' => 'Bearer ' . $api_key,
+                'Content-Type'  => 'application/json',
+            ),
+            'body'      => json_encode( array( 'long_url' => $long_url ) ),
+            'timeout'   => 15,
+        ));
+
+        if ( is_wp_error( $response ) || wp_remote_retrieve_response_code( $response ) > 201 ) {
+            IMV_API_Logger::log("URL shortening failed. Error: " . (is_wp_error($response) ? $response->get_error_message() : 'Invalid response from shortener service.'));
+            return $long_url; // Return original URL on failure
+        }
+
+        $body = json_decode( wp_remote_retrieve_body( $response ), true );
+
+        // The response key for the shortened link might be 'link', 'short_url', etc. depending on the service.
+        if ( isset( $body['link'] ) ) {
+            IMV_API_Logger::log("URL shortened successfully: " . $body['link']);
+            return $body['link'];
+        }
+
+        return $long_url; // Return original URL if link is not found in response
     }
 }
