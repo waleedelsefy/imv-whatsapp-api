@@ -1,5 +1,4 @@
 <?php
-namespace Imv\WhatsAppApi;
 
 /**
  * Core functionalities of the plugin.
