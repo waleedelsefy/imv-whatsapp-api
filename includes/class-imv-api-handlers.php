@@ -9,6 +9,7 @@ class IMV_API_Handlers {
      * @param WP_REST_Request $request
      * @return WP_REST_Response
      */
+
     public static function handle_product_search_request( $request ) {
         IMV_API_Logger::log('====== New /search-products Request ======');
         $search_query = sanitize_text_field( $request->get_param('query') );
@@ -183,7 +184,8 @@ class IMV_API_Handlers {
     }
 
     /**
-     * NEW: Handles the request to top up a wallet by creating an order for a top-up product.
+     * UPDATED: Handles the request to top up a wallet.
+     * Creates a pending order, sends a payment link via WhatsApp, and returns the link in the response.
      * @param WP_REST_Request $request
      * @return WP_REST_Response
      */
@@ -191,8 +193,6 @@ class IMV_API_Handlers {
         IMV_API_Logger::log( '====== New /topup-wallet Request ======' );
         $phone = sanitize_text_field( $request->get_param('phone') );
         $sku = sanitize_text_field( $request->get_param('sku') );
-        $payment_method = 'bacs'; // Default manual payment gateway
-        $payment_method_title = __( 'API Top-up', 'imv-api' );
 
         if ( empty($phone) || empty($sku) ) {
             return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Phone number and product SKU are required.' ), 400 );
@@ -219,7 +219,7 @@ class IMV_API_Handlers {
         }
 
         try {
-            // 4. Create a new order
+            // 4. Create a new order with 'pending' status
             $order = wc_create_order( array( 'customer_id' => $customer_id ) );
             $order->add_product( $product, 1 );
             $address = array(
@@ -230,21 +230,28 @@ class IMV_API_Handlers {
             );
             $order->set_address( $address, 'billing' );
             $order->calculate_totals();
+            $order->update_status( 'pending', __( 'Awaiting payment for wallet top-up via API.', 'imv-api' ) );
 
-            // 5. Mark order as completed to trigger the wallet funding hooks
-            $order->set_payment_method( $payment_method );
-            $order->set_payment_method_title( $payment_method_title );
-            $order->payment_complete();
-            $order->update_status( 'completed', __( 'Wallet top-up via API.', 'imv-api' ) );
-
+            // 5. Generate a payment link for the order
+            $payment_link = $order->get_checkout_payment_url();
             $order_id = $order->get_id();
+
+            // 6. Send the payment link to the customer via WhatsApp
+            $message_body = sprintf(
+                __( "Hello %s, please use the following link to complete your wallet top-up of %s: %s", 'imv-api' ),
+                $customer->first_name,
+                $order->get_formatted_order_total(),
+                $payment_link
+            );
+            IMV_API_Helpers::send_whatsapp_message( $phone, $message_body );
 
             $response_data = array(
                 'status'  => 'success',
                 'data'    => array(
-                    'order_id'    => $order_id,
-                    'message'     => 'Wallet top-up order created and completed successfully. Funds have been added to the wallet.',
-                    'customer_id' => $customer_id,
+                    'order_id'      => $order_id,
+                    'payment_link'  => $payment_link,
+                    'message'       => 'Wallet top-up order created and a payment link has been sent to the customer.',
+                    'customer_id'   => $customer_id,
                 )
             );
             return new WP_REST_Response( $response_data, 201 );
