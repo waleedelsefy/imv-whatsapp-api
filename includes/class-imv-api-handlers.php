@@ -9,7 +9,6 @@ class IMV_API_Handlers {
      * @param WP_REST_Request $request
      * @return WP_REST_Response
      */
-
     public static function handle_product_search_request( $request ) {
         IMV_API_Logger::log('====== New /search-products Request ======');
         $search_query = sanitize_text_field( $request->get_param('query') );
@@ -51,8 +50,6 @@ class IMV_API_Handlers {
 
     /**
      * Handles the request to check for a customer by phone number.
-     * @param WP_REST_Request $request
-     * @return WP_REST_Response
      */
     public static function handle_customer_check_request( $request ) {
         IMV_API_Logger::log( '====== New /check-customer Request ======' );
@@ -76,8 +73,6 @@ class IMV_API_Handlers {
 
     /**
      * Handles the request to create a new customer.
-     * @param WP_REST_Request $request
-     * @return WP_REST_Response
      */
     public static function handle_customer_create_request( $request ) {
         IMV_API_Logger::log( '====== New /create-customer Request ======' );
@@ -122,9 +117,7 @@ class IMV_API_Handlers {
     }
 
     /**
-     * Handles the request to create a new order (laundry pickup or standard).
-     * @param WP_REST_Request $request
-     * @return WP_REST_Response
+     * Handles the request to create a new order.
      */
     public static function handle_order_create_request( $request ) {
         IMV_API_Logger::log( '====== New /create-order Request ======' );
@@ -185,7 +178,7 @@ class IMV_API_Handlers {
 
     /**
      * UPDATED: Handles the request to top up a wallet.
-     * Creates a pending order, sends a payment link via WhatsApp, and returns the link in the response.
+     * Creates a pending order and sends a clean, bilingual payment link via WhatsApp.
      * @param WP_REST_Request $request
      * @return WP_REST_Response
      */
@@ -238,8 +231,9 @@ class IMV_API_Handlers {
 
             // 6. Create a clean, bilingual message and send it via WhatsApp
             $customer_name = $customer->first_name;
-            // Get the raw price without HTML tags
-            $clean_price = wp_strip_all_tags( wc_price( $order->get_total(), array('currency' => $order->get_currency()) ) );
+            // Get the formatted price, then strip tags and decode HTML entities
+            $formatted_price = wc_price( $order->get_total(), array('currency' => $order->get_currency()) );
+            $clean_price = html_entity_decode( wp_strip_all_tags( $formatted_price ) );
 
             $message_body = sprintf(
                 "مرحباً %s،\nلإتمام شحن محفظتك بقيمة %s، يرجى استخدام الرابط التالي:\n%s\n\n---\n\nHello %s,\nTo complete your wallet top-up of %s, please use the following link:\n%s",
@@ -270,4 +264,4 @@ class IMV_API_Handlers {
             return new WP_REST_Response( array( 'status' => 'error', 'message' => 'An internal error occurred while creating the top-up order.' ), 500 );
         }
     }
-}
+    }
