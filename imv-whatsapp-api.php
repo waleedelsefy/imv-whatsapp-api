@@ -3,7 +3,7 @@
  * Plugin Name:       IMV WhatsApp API
  * Plugin URI:        https://imvagency.net/
  * Description:       A custom WordPress plugin to integrate WooCommerce with WhatsApp, providing custom API endpoints, order status notifications, and an advanced customer wallet system with OTP login.
- * Version:           6.2
+ * Version:           6.3
  * Author:            waleed elsefy
  * Author URI:        https://imvagency.net/
  * License:           GPL v2 or later
@@ -17,6 +17,63 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 if ( ! defined( 'IMV_API_PLUGIN_DIR' ) ) {
     define( 'IMV_API_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 }
+
+/**
+ * This function handles the auto-login process. It runs on every page load
+ * before most of WordPress and WooCommerce, ensuring the user is logged in
+ * before any checks or redirects can happen.
+ */
+function imv_api_handle_autologin() {
+    if ( is_user_logged_in() || ! isset( $_GET['imv_autologin'], $_GET['uid'] ) ) {
+        return;
+    }
+
+    $user_id = absint( $_GET['uid'] );
+    $token_from_url = sanitize_key( $_GET['imv_autologin'] );
+
+    if ( ! $user_id || empty( $token_from_url ) ) {
+        return;
+    }
+
+    // Manually include logger if the main class hasn't loaded yet.
+    if ( ! class_exists('IMV_API_Logger') ) {
+        require_once IMV_API_PLUGIN_DIR . 'includes/class-imv-api-logger.php';
+    }
+
+    $stored_token = get_user_meta( $user_id, '_imv_autologin_token', true );
+    $expires = get_user_meta( $user_id, '_imv_autologin_token_expires', true );
+
+    if ( ! empty( $stored_token ) && hash_equals( $stored_token, $token_from_url ) && time() < $expires ) {
+        // Invalidate the token first
+        delete_user_meta( $user_id, '_imv_autologin_token' );
+        delete_user_meta( $user_id, '_imv_autologin_token_expires' );
+
+        // Log the user in
+        wp_set_current_user( $user_id );
+        wp_set_auth_cookie( $user_id, true );
+
+        IMV_API_Logger::log("Auto-login successful for user #{$user_id}. Redirecting to clean URL.");
+
+        // Redirect to a clean URL to remove the token from the address bar
+        $redirect_url = remove_query_arg( array( 'imv_autologin', 'uid' ) );
+        wp_safe_redirect( $redirect_url );
+        exit;
+    }
+}
+add_action('wp_loaded', 'imv_api_handle_autologin');
+
+/**
+ * This function disables the login requirement on the order-pay page,
+ * which respects the "guest checkout" setting even if the order is assigned to a user.
+ */
+function imv_api_allow_guest_payment_for_order( $is_required ) {
+    if ( function_exists('is_checkout_pay_page') && is_checkout_pay_page() && isset( $_GET['key'] ) ) {
+        return false; // Do not require login on the order-pay page if a key is present
+    }
+    return $is_required;
+}
+add_filter( 'woocommerce_login_form_required', 'imv_api_allow_guest_payment_for_order' );
+
 
 final class IMV_WhatsApp_API_Main {
     private static $instance = null;
@@ -81,14 +138,11 @@ final class IMV_WhatsApp_API_Main {
         $this->loader->add_action( 'admin_menu', $this->admin, 'add_admin_menu' );
         $this->loader->add_action( 'admin_init', $this->admin, 'settings_init' );
 
-        // OTP & Auto-Login Manager Hooks
+        // OTP Login Form Manager Hooks
         $this->loader->add_action( 'wp_enqueue_scripts', $this->login_manager, 'enqueue_scripts' );
         $this->loader->add_action( 'woocommerce_login_form_start', $this->login_manager, 'render_otp_login_form' );
         $this->loader->add_action( 'wp_ajax_nopriv_imv_request_otp', $this->login_manager, 'ajax_request_otp' );
         $this->loader->add_action( 'wp_ajax_nopriv_imv_verify_otp_and_login', $this->login_manager, 'ajax_verify_otp_and_login' );
-
-        // ** UPDATED HOOK **: Use 'template_redirect' to handle both auto-login and disabling the login form.
-        $this->loader->add_action( 'template_redirect', $this->login_manager, 'setup_payment_page_autologin', 1 );
     }
 }
 
