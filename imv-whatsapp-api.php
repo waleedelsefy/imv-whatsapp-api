@@ -3,7 +3,7 @@
  * Plugin Name:       IMV WhatsApp API
  * Plugin URI:        https://imvagency.net/
  * Description:       A custom WordPress plugin to integrate WooCommerce with WhatsApp, providing custom API endpoints, order status notifications, and an advanced customer wallet system.
- * Version:           4.5
+ * Version:           4.6
  * Author:            waleed elsefy
  * Author URI:        https://imvagency.net/
  * License:           GPL v2 or later
@@ -82,8 +82,8 @@ final class IMV_WhatsApp_API_Main {
         $loader->add_action( 'edit_user_profile_update', $wallet, 'save_wallet_fields_from_user_profile' );
         $loader->add_action( 'woocommerce_order_status_changed', $wallet, 'deduct_from_pending_on_order_completion', 15, 4 );
 
-        // ** UPDATED HOOK for wallet top-up using Subscriptions **
-        // This hook replaces the old one to handle both initial and renewal payments.
+        // Hooks for adding funds to wallet
+        $loader->add_action( 'woocommerce_order_status_completed', $wallet, 'add_funds_on_topup_order_completion', 10, 1 );
         $loader->add_action( 'woocommerce_subscription_payment_complete', $wallet, 'add_funds_from_subscription', 10, 1 );
 
         // Admin settings functionalities

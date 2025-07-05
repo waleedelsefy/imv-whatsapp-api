@@ -1,5 +1,4 @@
 <?php
-
 /**
  * Handles all custom REST API requests for customers, products, and orders.
  */
@@ -10,7 +9,7 @@ class IMV_API_Handlers {
      * @param WP_REST_Request $request
      * @return WP_REST_Response
      */
-    public static function handle_product_search_request( WP_REST_Request $request ) {
+    public static function handle_product_search_request( $request ) {
         IMV_API_Logger::log('====== New /search-products Request ======');
         $search_query = sanitize_text_field( $request->get_param('query') );
         IMV_API_Logger::log('Search Query: ' . $search_query);
@@ -54,9 +53,8 @@ class IMV_API_Handlers {
      * @param WP_REST_Request $request
      * @return WP_REST_Response
      */
-    public static function handle_customer_check_request( WP_REST_Request $request ) {
+    public static function handle_customer_check_request( $request ) {
         IMV_API_Logger::log( '====== New /check-customer Request ======' );
-        IMV_API_Logger::log( 'Request Body: ' . json_encode( $request->get_params(), JSON_UNESCAPED_UNICODE ) );
         $phone_number = sanitize_text_field( $request->get_param('phone') );
         if ( empty( $phone_number ) ) {
             return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Phone number is required.' ), 400 );
@@ -80,9 +78,8 @@ class IMV_API_Handlers {
      * @param WP_REST_Request $request
      * @return WP_REST_Response
      */
-    public static function handle_customer_create_request( WP_REST_Request $request ) {
+    public static function handle_customer_create_request( $request ) {
         IMV_API_Logger::log( '====== New /create-customer Request ======' );
-        IMV_API_Logger::log( 'Request Body: ' . json_encode( $request->get_params(), JSON_UNESCAPED_UNICODE ) );
         $phone = trim( $request->get_param('phone') ?? '' );
         $name = trim( $request->get_param('name') ?? '' );
         $address = trim( $request->get_param('address') ?? '' );
@@ -97,9 +94,6 @@ class IMV_API_Handlers {
         if ( username_exists( $cleaned_phone ) || email_exists( $dummy_email ) ) {
             return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Customer already exists.' ), 409 );
         }
-        if ( ! function_exists( 'wc_create_new_customer' ) ) {
-            include_once( WC_ABSPATH . 'includes/wc-customer-functions.php' );
-        }
         $customer_id = wc_create_new_customer( $dummy_email, $cleaned_phone );
         if ( is_wp_error( $customer_id ) ) {
             return new WP_REST_Response( array( 'status' => 'error', 'message' => $customer_id->get_error_message() ), 500 );
@@ -111,12 +105,10 @@ class IMV_API_Handlers {
         update_user_meta( $customer_id, 'last_name', $last_name );
         update_user_meta( $customer_id, 'display_name', $name );
         update_user_meta( $customer_id, 'billing_phone', $cleaned_phone );
-
         $country_code = IMV_API_Helpers::get_country_from_phone($cleaned_phone);
         if ($country_code) {
             update_user_meta($customer_id, 'billing_country', $country_code);
         }
-
         if ($is_location_provided) {
             update_user_meta( $customer_id, 'billing_address_1', __( 'Location from Map', 'imv-api' ) );
             update_user_meta( $customer_id, 'billing_latitude', sanitize_text_field($latitude) );
@@ -133,91 +125,133 @@ class IMV_API_Handlers {
      * @param WP_REST_Request $request
      * @return WP_REST_Response
      */
-    public static function handle_order_create_request( WP_REST_Request $request ) {
+    public static function handle_order_create_request( $request ) {
         IMV_API_Logger::log( '====== New /create-order Request ======' );
-        IMV_API_Logger::log( 'Request Body: ' . json_encode( $request->get_params(), JSON_UNESCAPED_UNICODE ) );
         $phone = sanitize_text_field( $request->get_param('phone') );
-        $products = $request->get_param('products'); // This is now optional
-        $estimated_cost = floatval( $request->get_param('estimated_cost') ); // New parameter for initial hold
-
+        $products = $request->get_param('products');
+        $estimated_cost = floatval( $request->get_param('estimated_cost') );
         if ( empty($phone) ) {
             return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Phone number is required.' ), 400 );
         }
-
         $users = get_users( array( 'meta_key' => 'billing_phone', 'meta_value' => $phone, 'number' => 1 ) );
         if ( empty($users) ) {
             return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Customer not found. Please create the customer first.' ), 404 );
         }
         $customer = $users[0];
         $customer_id = $customer->ID;
-
         try {
             $order = wc_create_order(array('customer_id' => $customer_id));
-
-            // If no products are provided, it's a laundry pickup request.
             if ( empty($products) || !is_array($products) ) {
                 $order->set_status('wc-pending-assessment');
                 $order->add_order_note( __( 'Order created via WhatsApp for laundry pickup. Price to be determined after assessment.', 'imv-api' ) );
-
-                // If an estimated cost is provided, hold that amount in pending balance
                 if ( $estimated_cost > 0 ) {
                     $current_available = get_user_meta( $customer_id, 'imv_wallet_balance', true );
-                    $current_available = is_numeric($current_available) ? floatval($current_available) : 0;
-
-                    if ( $current_available < $estimated_cost ) {
-                        // Fail order creation if insufficient funds for estimated cost
-                        $order->delete(true); // Delete the partially created order
-                        return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Insufficient wallet balance to place this pickup request with the estimated cost.' ), 400 );
+                    if ( floatval($current_available) < $estimated_cost ) {
+                        $order->delete(true);
+                        return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Insufficient wallet balance for estimated cost.' ), 400 );
                     }
-
-                    $new_available = $current_available - $estimated_cost;
+                    $new_available = floatval($current_available) - $estimated_cost;
                     $current_pending = get_user_meta( $customer_id, 'imv_pending_balance', true );
-                    $current_pending = is_numeric($current_pending) ? floatval($current_pending) : 0;
-                    $new_pending = $current_pending + $estimated_cost;
-
+                    $new_pending = floatval($current_pending) + $estimated_cost;
                     update_user_meta( $customer_id, 'imv_wallet_balance', $new_available );
                     update_user_meta( $customer_id, 'imv_pending_balance', $new_pending );
-                    $order->update_meta_data( '_imv_estimated_pickup_cost', $estimated_cost ); // Store estimated cost
+                    $order->update_meta_data( '_imv_estimated_pickup_cost', $estimated_cost );
                     IMV_API_Logger::log( "User #{$customer_id} held {$estimated_cost} for order #{$order->get_id()}. New available: {$new_available}, New pending: {$new_pending}" );
                 }
             } else {
-                // If products are provided, add them to the order.
                 foreach ( $products as $product_data ) {
-                    $sku = sanitize_text_field($product_data['sku']);
-                    $quantity = absint($product_data['quantity']);
-                    $product_id = wc_get_product_id_by_sku($sku);
-                    if ( $product_id && $quantity > 0 ) {
-                        $product = wc_get_product($product_id);
-                        $order->add_product( $product, $quantity );
+                    $product_id = wc_get_product_id_by_sku( sanitize_text_field($product_data['sku']) );
+                    if ( $product_id && absint($product_data['quantity']) > 0 ) {
+                        $order->add_product( wc_get_product($product_id), absint($product_data['quantity']) );
                     }
                 }
             }
-
             $address = array(
-                'first_name' => $customer->first_name,
-                'last_name' => $customer->last_name,
+                'first_name' => $customer->first_name, 'last_name' => $customer->last_name,
                 'address_1' => get_user_meta($customer_id, 'billing_address_1', true),
-                'phone' => $phone,
-                'email' => $customer->user_email,
+                'phone' => $phone, 'email' => $customer->user_email,
                 'country' => get_user_meta($customer_id, 'billing_country', true),
             );
             $order->set_address( $address, 'billing' );
             $order->calculate_totals();
             $order_id = $order->save();
+            return new WP_REST_Response( array( 'status' => 'success', 'data' => array( 'order_id' => $order_id, 'order_total' => $order->get_total(), 'currency' => get_woocommerce_currency_symbol(), 'message' => 'Order created successfully.' ) ), 201 );
+        } catch ( Exception $e ) {
+            IMV_API_Logger::log( 'Error creating order: ' . $e->getMessage() );
+            return new WP_REST_Response( array( 'status' => 'error', 'message' => 'An internal error occurred.' ), 500 );
+        }
+    }
+
+    /**
+     * NEW: Handles the request to top up a wallet by creating an order for a top-up product.
+     * @param WP_REST_Request $request
+     * @return WP_REST_Response
+     */
+    public static function handle_wallet_topup_request( $request ) {
+        IMV_API_Logger::log( '====== New /topup-wallet Request ======' );
+        $phone = sanitize_text_field( $request->get_param('phone') );
+        $sku = sanitize_text_field( $request->get_param('sku') );
+        $payment_method = 'bacs'; // Default manual payment gateway
+        $payment_method_title = __( 'API Top-up', 'imv-api' );
+
+        if ( empty($phone) || empty($sku) ) {
+            return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Phone number and product SKU are required.' ), 400 );
+        }
+
+        // 1. Find the customer
+        $users = get_users( array( 'meta_key' => 'billing_phone', 'meta_value' => $phone, 'number' => 1 ) );
+        if ( empty($users) ) {
+            return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Customer not found.' ), 404 );
+        }
+        $customer = $users[0];
+        $customer_id = $customer->ID;
+
+        // 2. Find the product by SKU
+        $product_id = wc_get_product_id_by_sku( $sku );
+        if ( ! $product_id ) {
+            return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Product with the specified SKU not found.' ), 404 );
+        }
+        $product = wc_get_product( $product_id );
+
+        // 3. Verify it's a valid top-up product
+        if ( ! has_term( 'wallet-top-up', 'product_cat', $product_id ) ) {
+            return new WP_REST_Response( array( 'status' => 'error', 'message' => 'The specified product is not a valid wallet top-up product.' ), 400 );
+        }
+
+        try {
+            // 4. Create a new order
+            $order = wc_create_order( array( 'customer_id' => $customer_id ) );
+            $order->add_product( $product, 1 );
+            $address = array(
+                'first_name' => $customer->first_name,
+                'last_name'  => $customer->last_name,
+                'phone'      => $phone,
+                'email'      => $customer->user_email,
+            );
+            $order->set_address( $address, 'billing' );
+            $order->calculate_totals();
+
+            // 5. Mark order as completed to trigger the wallet funding hooks
+            $order->set_payment_method( $payment_method );
+            $order->set_payment_method_title( $payment_method_title );
+            $order->payment_complete();
+            $order->update_status( 'completed', __( 'Wallet top-up via API.', 'imv-api' ) );
+
+            $order_id = $order->get_id();
 
             $response_data = array(
-                'status' => 'success',
-                'data' => array(
-                    'order_id' => $order_id,
-                    'order_total' => $order->get_total(),
-                    'currency' => get_woocommerce_currency_symbol(),
-                    'message' => 'Order created successfully.'
+                'status'  => 'success',
+                'data'    => array(
+                    'order_id'    => $order_id,
+                    'message'     => 'Wallet top-up order created and completed successfully. Funds have been added to the wallet.',
+                    'customer_id' => $customer_id,
                 )
             );
             return new WP_REST_Response( $response_data, 201 );
+
         } catch ( Exception $e ) {
-            IMV_API_Logger::log( 'Error creating order: ' . $e->getMessage() );
-            return new WP_REST_Response( array( 'status' => 'error', 'message' => 'An internal error occurred while creating the order.' ), 500 );
+            IMV_API_Logger::log( 'Error creating top-up order via API: ' . $e->getMessage() );
+            return new WP_REST_Response( array( 'status' => 'error', 'message' => 'An internal error occurred while creating the top-up order.' ), 500 );
         }
     }
 }

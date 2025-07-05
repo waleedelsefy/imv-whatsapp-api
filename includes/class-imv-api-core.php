@@ -1,99 +1,69 @@
 <?php
-
 /**
  * Core functionalities of the plugin.
- * This includes REST API endpoint registration, custom order status, and WhatsApp notifications.
+ * This class is responsible for registering API endpoints, custom order statuses,
+ * and handling WhatsApp notifications.
  */
-
-// Note: The namespace has been removed to ensure compatibility with other plugin classes
-// that are in the global namespace. This resolves class loading conflicts.
-
 class IMV_API_Core {
 
+    /**
+     * Constructor for the core class.
+     */
     public function __construct() {
-        // No explicit require_once calls for WooCommerce functions here.
-        // WooCommerce core functions are generally available by the time
-        // plugin hooks like 'rest_api_init' or 'plugins_loaded' fire,
-        // assuming WooCommerce is active.
+        // The constructor is intentionally left empty.
+        // All hooks are registered in the main plugin file.
     }
 
     /**
-     * Load plugin textdomain for translations.
+     * Loads the plugin's text domain for translations.
      */
     public function load_textdomain() {
         load_plugin_textdomain( 'imv-api', false, dirname( plugin_basename( IMV_API_PLUGIN_DIR . 'imv-whatsapp-api.php' ) ) . '/languages' );
     }
 
     /**
-     * Action hook to register all of our custom REST API endpoints.
+     * Registers all custom REST API endpoints for the plugin.
      */
     public function register_api_endpoints() {
-        // Endpoint for checking if a customer exists.
+        // --- Customer Endpoints ---
         register_rest_route( 'imv-api/v1', '/check-customer', array(
-            'methods'             => 'POST',
-            'callback'            => array( 'IMV_API_Handlers', 'handle_customer_check_request' ),
-            'permission_callback' => '__return_true' // WARNING: For production, implement proper authentication.
+            'methods' => 'POST', 'callback' => array( 'IMV_API_Handlers', 'handle_customer_check_request' ), 'permission_callback' => '__return_true'
         ) );
-
-        // Endpoint for creating a new customer.
         register_rest_route( 'imv-api/v1', '/create-customer', array(
-            'methods'             => 'POST',
-            'callback'            => array( 'IMV_API_Handlers', 'handle_customer_create_request' ),
-            'permission_callback' => '__return_true' // WARNING: For production, implement proper authentication.
+            'methods' => 'POST', 'callback' => array( 'IMV_API_Handlers', 'handle_customer_create_request' ), 'permission_callback' => '__return_true'
         ) );
 
-        // Endpoint for creating a new order.
-        register_rest_route( 'imv-api/v1', '/create-order', array(
-            'methods'             => 'POST',
-            'callback'            => array( 'IMV_API_Handlers', 'handle_order_create_request' ),
-            'permission_callback' => '__return_true' // WARNING: For production, implement proper authentication.
-        ) );
-
-        // Endpoint for searching products.
+        // --- Product & Order Endpoints ---
         register_rest_route( 'imv-api/v1', '/search-products', array(
-            'methods'             => 'POST',
-            'callback'            => array( 'IMV_API_Handlers', 'handle_product_search_request' ),
-            'permission_callback' => '__return_true' // WARNING: For production, implement proper authentication.
+            'methods' => 'POST', 'callback' => array( 'IMV_API_Handlers', 'handle_product_search_request' ), 'permission_callback' => '__return_true'
+        ) );
+        register_rest_route( 'imv-api/v1', '/create-order', array(
+            'methods' => 'POST', 'callback' => array( 'IMV_API_Handlers', 'handle_order_create_request' ), 'permission_callback' => '__return_true'
         ) );
 
-        // Endpoint for checking customer wallet balance.
+        // --- Wallet Endpoints ---
         register_rest_route( 'imv-api/v1', '/check-wallet', array(
-            'methods'             => 'POST',
-            'callback'            => array( 'IMV_API_Wallet', 'handle_check_wallet_request' ),
-            'permission_callback' => '__return_true' // WARNING: For production, implement proper authentication.
+            'methods' => 'POST', 'callback' => array( 'IMV_API_Wallet', 'handle_check_wallet_request' ), 'permission_callback' => '__return_true'
         ) );
-
-        // Endpoint for updating customer wallet balance.
         register_rest_route( 'imv-api/v1', '/update-wallet', array(
-            'methods'             => 'POST',
-            'callback'            => array( 'IMV_API_Wallet', 'handle_update_wallet_request' ),
-            'permission_callback' => '__return_true' // WARNING: For production, implement proper authentication.
+            'methods' => 'POST', 'callback' => array( 'IMV_API_Wallet', 'handle_update_wallet_request' ), 'permission_callback' => '__return_true'
         ) );
-
-        // Endpoint for holding funds (moving from available to pending).
+        register_rest_route( 'imv-api/v1', '/topup-wallet', array(
+            'methods' => 'POST', 'callback' => array( 'IMV_API_Handlers', 'handle_wallet_topup_request' ), 'permission_callback' => '__return_true'
+        ) );
         register_rest_route( 'imv-api/v1', '/hold-balance', array(
-            'methods'             => 'POST',
-            'callback'            => array( 'IMV_API_Wallet', 'handle_hold_balance_request' ),
-            'permission_callback' => '__return_true' // WARNING: For production, implement proper authentication.
+            'methods' => 'POST', 'callback' => array( 'IMV_API_Wallet', 'handle_hold_balance_request' ), 'permission_callback' => '__return_true'
         ) );
-
-        // Endpoint for releasing held funds (moving from pending back to available).
         register_rest_route( 'imv-api/v1', '/release-balance', array(
-            'methods'             => 'POST',
-            'callback'            => array( 'IMV_API_Wallet', 'handle_release_balance_request' ),
-            'permission_callback' => '__return_true' // WARNING: For production, implement proper authentication.
+            'methods' => 'POST', 'callback' => array( 'IMV_API_Wallet', 'handle_release_balance_request' ), 'permission_callback' => '__return_true'
         ) );
-
-        // Endpoint for deducting from pending balance.
         register_rest_route( 'imv-api/v1', '/deduct-pending', array(
-            'methods'             => 'POST',
-            'callback'            => array( 'IMV_API_Wallet', 'handle_deduct_pending_balance_request' ),
-            'permission_callback' => '__return_true' // WARNING: For production, implement proper authentication.
+            'methods' => 'POST', 'callback' => array( 'IMV_API_Wallet', 'handle_deduct_pending_balance_request' ), 'permission_callback' => '__return_true'
         ) );
     }
 
     /**
-     * Register a new "Pending Assessment" order status for laundry pickups.
+     * Registers the custom 'Pending Assessment' order status.
      */
     public function register_pending_assessment_order_status() {
         register_post_status( 'wc-pending-assessment', array(
@@ -107,10 +77,10 @@ class IMV_API_Core {
     }
 
     /**
-     * Add the new status to the list of WooCommerce order statuses in the admin panel.
+     * Adds the custom order status to the list of WooCommerce order statuses.
      *
-     * @param array $order_statuses
-     * @return array
+     * @param array $order_statuses The existing order statuses.
+     * @return array The modified order statuses.
      */
     public function add_pending_assessment_to_order_statuses( $order_statuses ) {
         $new_order_statuses = array();
@@ -124,7 +94,7 @@ class IMV_API_Core {
     }
 
     /**
-     * Constructs and sends a direct WhatsApp message via the user's chatbot API.
+     * Sends a direct WhatsApp notification when an order status changes.
      *
      * @param int      $order_id   The order ID.
      * @param string   $old_status The old order status.
@@ -147,32 +117,16 @@ class IMV_API_Core {
 
         switch ($new_status) {
             case 'processing':
-                $message_body = sprintf(
-                    __( 'Hello %s, your order #%d is now being processed and we will notify you when it is shipped.', 'imv-api' ),
-                    $customer_name,
-                    $order_id
-                );
+                $message_body = sprintf( __( 'Hello %s, your order #%d is now being processed and we will notify you when it is shipped.', 'imv-api' ), $customer_name, $order_id );
                 break;
             case 'on-hold':
-                $message_body = sprintf(
-                    __( 'Hello %s, your order #%d is currently on hold.', 'imv-api' ),
-                    $customer_name,
-                    $order_id
-                );
+                $message_body = sprintf( __( 'Hello %s, your order #%d is currently on hold.', 'imv-api' ), $customer_name, $order_id );
                 break;
-            case 'pending-assessment': // Notification for our custom status
-                $message_body = sprintf(
-                    __( 'Hello %s, your pickup request #%d has been confirmed. Our representative is on the way.', 'imv-api' ),
-                    $customer_name,
-                    $order_id
-                );
+            case 'pending-assessment':
+                $message_body = sprintf( __( 'Hello %s, your pickup request #%d has been confirmed. Our representative is on the way.', 'imv-api' ), $customer_name, $order_id );
                 break;
             case 'completed':
-                $message_body = sprintf(
-                    __( 'Your order #%d has been successfully delivered! Thank you for trusting us, %s.', 'imv-api' ),
-                    $order_id,
-                    $customer_name
-                );
+                $message_body = sprintf( __( 'Your order #%d has been successfully delivered! Thank you for trusting us, %s.', 'imv-api' ), $order_id, $customer_name );
                 break;
         }
 
@@ -189,12 +143,7 @@ class IMV_API_Core {
             return;
         }
 
-        $messageObject = array(
-            "to" => $formatted_phone,
-            "type" => "text",
-            "text" => array( "preview_url" => false, "body" => $message_body )
-        );
-
+        $messageObject = array( "to" => $formatted_phone, "type" => "text", "text" => array( "preview_url" => false, "body" => $message_body ) );
         $request_body = array( "messageObject" => $messageObject );
         $full_api_url = rtrim($api_url, '/') . '/api/v1/send-message?token=' . $api_token;
 
