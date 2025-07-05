@@ -3,7 +3,7 @@
  * Plugin Name:       IMV WhatsApp API
  * Plugin URI:        https://imvagency.net/
  * Description:       A custom WordPress plugin to integrate WooCommerce with WhatsApp, providing custom API endpoints, order status notifications, and an advanced customer wallet system with OTP login.
- * Version:           5.9
+ * Version:           6.0
  * Author:            waleed elsefy
  * Author URI:        https://imvagency.net/
  * License:           GPL v2 or later
@@ -36,17 +36,13 @@ final class IMV_WhatsApp_API_Main {
     private function __construct() {
         $this->load_dependencies();
 
-        // Instantiate all components
         $this->loader        = new IMV_API_Loader();
         $this->core          = new IMV_API_Core();
         $this->wallet        = new IMV_API_Wallet();
         $this->admin         = new IMV_API_Admin();
         $this->login_manager = new IMV_API_Login_Form_Manager();
 
-        // Define all hooks
         $this->define_hooks();
-
-        // Run the loader to execute all registered hooks
         $this->loader->run();
     }
 
@@ -63,10 +59,6 @@ final class IMV_WhatsApp_API_Main {
     }
 
     private function define_hooks() {
-        // ** CRITICAL FIX **
-        // Hook the auto-login verification to a very early action to beat WooCommerce's redirect.
-        $this->loader->add_action( 'wp_loaded', $this->login_manager, 'handle_autologin_token_verification' );
-
         // Core
         $this->loader->add_action( 'init', $this->core, 'load_textdomain' );
         $this->loader->add_action( 'rest_api_init', $this->core, 'register_api_endpoints' );
@@ -94,6 +86,10 @@ final class IMV_WhatsApp_API_Main {
         $this->loader->add_action( 'woocommerce_login_form_start', $this->login_manager, 'render_otp_login_form' );
         $this->loader->add_action( 'wp_ajax_nopriv_imv_request_otp', $this->login_manager, 'ajax_request_otp' );
         $this->loader->add_action( 'wp_ajax_nopriv_imv_verify_otp_and_login', $this->login_manager, 'ajax_verify_otp_and_login' );
+
+        // ** UPDATED HOOKS for Auto-Login **
+        $this->loader->add_action( 'init', $this->login_manager, 'handle_autologin_token_verification', 1 );
+        $this->loader->add_action( 'template_redirect', $this->login_manager, 'redirect_after_autologin' );
     }
 }
 
@@ -109,5 +105,4 @@ function imv_api_deactivate() {
 }
 register_deactivation_hook( __FILE__, 'imv_api_deactivate' );
 
-// Get the plugin instance.
 IMV_WhatsApp_API_Main::get_instance();
