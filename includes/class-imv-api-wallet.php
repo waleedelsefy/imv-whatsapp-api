@@ -1,11 +1,7 @@
 <?php
 /**
- * Handles all wallet-related functionalities:
- * - Wallet balance initialization for new users.
- * - Admin UI for managing wallet balances.
- * - API endpoints for wallet interactions.
- * - Integration with order status changes for pending balance deduction.
- * - NEW: Handles wallet top-up from product purchases.
+ * Handles all wallet-related functionalities.
+ * This version is updated to support both simple product top-ups and WooCommerce Subscriptions.
  */
 class IMV_API_Wallet {
 
@@ -22,12 +18,11 @@ class IMV_API_Wallet {
         if ( ! metadata_exists( 'user', $user_id, 'imv_pending_balance' ) ) {
             update_user_meta( $user_id, 'imv_pending_balance', 0 );
         }
-        IMV_API_Logger::log("Initialized wallet for new user #{$user_id} with 0 available and 0 pending balance.");
+        IMV_API_Logger::log("Initialized wallet for new user #{$user_id}.");
     }
 
     /**
      * When a new customer is created via API, ensure their wallet is initialized.
-     * Hook into the successful customer creation.
      *
      * @param int $customer_id The ID of the newly created WooCommerce customer.
      */
@@ -37,7 +32,6 @@ class IMV_API_Wallet {
 
     /**
      * Add custom fields to the user profile page for wallet balance.
-     * Accessible by Administrator, Shop Manager, and Collector roles.
      *
      * @param WP_User $user The user object.
      */
@@ -45,13 +39,10 @@ class IMV_API_Wallet {
         if ( ! current_user_can( 'manage_woocommerce' ) ) {
             return;
         }
-
         $wallet_balance = get_user_meta( $user->ID, 'imv_wallet_balance', true );
         $pending_balance = get_user_meta( $user->ID, 'imv_pending_balance', true );
-
         $wallet_balance = is_numeric( $wallet_balance ) ? floatval($wallet_balance) : 0;
         $pending_balance = is_numeric( $pending_balance ) ? floatval($pending_balance) : 0;
-
         ?>
         <h2><?php _e( 'IMV Wallet Balance', 'imv-api' ); ?></h2>
         <table class="form-table">
@@ -89,7 +80,6 @@ class IMV_API_Wallet {
 
     /**
      * Save custom fields from the user profile page.
-     * Only allows users with 'manage_woocommerce' capability (Admin, Shop Manager, Collector) to save.
      *
      * @param int $user_id The user ID.
      */
@@ -97,7 +87,6 @@ class IMV_API_Wallet {
         if ( ! current_user_can( 'manage_woocommerce', $user_id ) ) {
             return;
         }
-
         if ( isset( $_POST['imv_add_to_wallet'] ) && is_numeric( $_POST['imv_add_to_wallet'] ) ) {
             $amount_to_change = floatval( $_POST['imv_add_to_wallet'] );
             $current_balance = get_user_meta( $user_id, 'imv_wallet_balance', true );
@@ -107,7 +96,6 @@ class IMV_API_Wallet {
         } elseif ( isset( $_POST['imv_wallet_balance'] ) && is_numeric( $_POST['imv_wallet_balance'] ) ) {
             update_user_meta( $user_id, 'imv_wallet_balance', floatval( $_POST['imv_wallet_balance'] ) );
         }
-
         if ( isset( $_POST['imv_add_to_pending'] ) && is_numeric( $_POST['imv_add_to_pending'] ) ) {
             $amount_to_change_pending = floatval( $_POST['imv_add_to_pending'] );
             $current_pending_balance = get_user_meta( $user_id, 'imv_pending_balance', true );
@@ -120,245 +108,121 @@ class IMV_API_Wallet {
     }
 
     /**
-     * Handles the request to check customer wallet balance.
-     * @param WP_REST_Request $request
-     * @return WP_REST_Response
+     * Handles the API request to check customer wallet balance.
      */
-    public static function handle_check_wallet_request( WP_REST_Request $request ) {
+    public static function handle_check_wallet_request( $request ) {
         IMV_API_Logger::log( '====== New /check-wallet Request ======' );
         $phone_number = sanitize_text_field( $request->get_param('phone') );
-
-        if ( empty( $phone_number ) ) {
-            return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Phone number is required.' ), 400 );
-        }
-
+        if ( empty( $phone_number ) ) { return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Phone number is required.' ), 400 ); }
         $users = get_users( array( 'meta_key' => 'billing_phone', 'meta_value' => $phone_number, 'number' => 1, 'count_total' => false ) );
-        if ( empty( $users ) ) {
-            return new WP_REST_Response( array( 'status' => 'not_found', 'message' => 'Customer not found.' ), 404 );
-        }
-
+        if ( empty( $users ) ) { return new WP_REST_Response( array( 'status' => 'not_found', 'message' => 'Customer not found.' ), 404 ); }
         $customer_id = $users[0]->ID;
         $available_balance = get_user_meta( $customer_id, 'imv_wallet_balance', true );
         $pending_balance = get_user_meta( $customer_id, 'imv_pending_balance', true );
-
         $available_balance = is_numeric($available_balance) ? floatval($available_balance) : 0;
         $pending_balance = is_numeric($pending_balance) ? floatval($pending_balance) : 0;
-
         IMV_API_Logger::log( "Wallet check for user #{$customer_id}. Available: {$available_balance}, Pending: {$pending_balance}" );
-        return new WP_REST_Response( array(
-            'status' => 'success',
-            'data' => array(
-                'customer_id' => $customer_id,
-                'available_balance' => $available_balance,
-                'pending_balance' => $pending_balance,
-                'currency' => get_woocommerce_currency_symbol()
-            )
-        ), 200 );
+        return new WP_REST_Response( array( 'status' => 'success', 'data' => array( 'customer_id' => $customer_id, 'available_balance' => $available_balance, 'pending_balance' => $pending_balance, 'currency' => get_woocommerce_currency_symbol() ) ), 200 );
     }
 
     /**
-     * Handles the request to update a customer's wallet balance (add/deduct from available).
-     * @param WP_REST_Request $request
-     * @return WP_REST_Response
+     * Handles the API request to update a customer's wallet balance.
      */
-    public static function handle_update_wallet_request( WP_REST_Request $request ) {
+    public static function handle_update_wallet_request( $request ) {
         IMV_API_Logger::log( '====== New /update-wallet Request ======' );
         $phone_number = sanitize_text_field( $request->get_param('phone') );
         $amount = floatval( $request->get_param('amount') );
-
-        if ( empty( $phone_number ) || ! is_numeric( $amount ) ) {
-            return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Phone number and a valid amount are required.' ), 400 );
-        }
-
+        if ( empty( $phone_number ) || ! is_numeric( $amount ) ) { return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Phone number and a valid amount are required.' ), 400 ); }
         $users = get_users( array( 'meta_key' => 'billing_phone', 'meta_value' => $phone_number, 'number' => 1, 'count_total' => false ) );
-        if ( empty( $users ) ) {
-            return new WP_REST_Response( array( 'status' => 'not_found', 'message' => 'Customer not found.' ), 404 );
-        }
-
+        if ( empty( $users ) ) { return new WP_REST_Response( array( 'status' => 'not_found', 'message' => 'Customer not found.' ), 404 ); }
         $customer_id = $users[0]->ID;
         $current_balance = get_user_meta( $customer_id, 'imv_wallet_balance', true );
         $current_balance = is_numeric($current_balance) ? floatval($current_balance) : 0;
-
         $new_balance = $current_balance + $amount;
         update_user_meta( $customer_id, 'imv_wallet_balance', $new_balance );
         IMV_API_Logger::log( "User #{$customer_id} wallet updated: changed by {$amount}, new available balance: {$new_balance}" );
-
-        return new WP_REST_Response( array(
-            'status' => 'success',
-            'data' => array(
-                'customer_id' => $customer_id,
-                'old_balance' => $current_balance,
-                'new_balance' => $new_balance,
-                'currency' => get_woocommerce_currency_symbol(),
-                'message' => 'Wallet balance updated successfully.'
-            )
-        ), 200 );
+        return new WP_REST_Response( array( 'status' => 'success', 'data' => array( 'customer_id' => $customer_id, 'old_balance' => $current_balance, 'new_balance' => $new_balance, 'currency' => get_woocommerce_currency_symbol(), 'message' => 'Wallet balance updated successfully.' ) ), 200 );
     }
 
     /**
-     * Handles the request to hold funds (move from available to pending balance).
-     * @param WP_REST_Request $request
-     * @return WP_REST_Response
+     * Handles the API request to hold funds.
      */
-    public static function handle_hold_balance_request( WP_REST_Request $request ) {
+    public static function handle_hold_balance_request( $request ) {
         IMV_API_Logger::log( '====== New /hold-balance Request ======' );
         $phone_number = sanitize_text_field( $request->get_param('phone') );
         $amount = floatval( $request->get_param('amount') );
-
-        if ( empty( $phone_number ) || ! is_numeric( $amount ) || $amount <= 0 ) {
-            return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Phone number and a positive amount are required.' ), 400 );
-        }
-
+        if ( empty( $phone_number ) || ! is_numeric( $amount ) || $amount <= 0 ) { return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Phone number and a positive amount are required.' ), 400 ); }
         $users = get_users( array( 'meta_key' => 'billing_phone', 'meta_value' => $phone_number, 'number' => 1, 'count_total' => false ) );
-        if ( empty( $users ) ) {
-            return new WP_REST_Response( array( 'status' => 'not_found', 'message' => 'Customer not found.' ), 404 );
-        }
-
+        if ( empty( $users ) ) { return new WP_REST_Response( array( 'status' => 'not_found', 'message' => 'Customer not found.' ), 404 ); }
         $customer_id = $users[0]->ID;
         $current_available = get_user_meta( $customer_id, 'imv_wallet_balance', true );
         $current_pending = get_user_meta( $customer_id, 'imv_pending_balance', true );
-
         $current_available = is_numeric($current_available) ? floatval($current_available) : 0;
         $current_pending = is_numeric($current_pending) ? floatval($current_pending) : 0;
-
-        if ( $current_available < $amount ) {
-            return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Insufficient available balance to hold funds.' ), 400 );
-        }
-
+        if ( $current_available < $amount ) { return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Insufficient available balance to hold funds.' ), 400 ); }
         $new_available = $current_available - $amount;
         $new_pending = $current_pending + $amount;
-
         update_user_meta( $customer_id, 'imv_wallet_balance', $new_available );
         update_user_meta( $customer_id, 'imv_pending_balance', $new_pending );
         IMV_API_Logger::log( "User #{$customer_id} held funds: {$amount}. New available: {$new_available}, New pending: {$new_pending}" );
-
-        return new WP_REST_Response( array(
-            'status' => 'success',
-            'data' => array(
-                'customer_id' => $customer_id,
-                'amount_held' => $amount,
-                'new_available_balance' => $new_available,
-                'new_pending_balance' => $new_pending,
-                'currency' => get_woocommerce_currency_symbol(),
-                'message' => 'Funds successfully held for assessment.'
-            )
-        ), 200 );
+        return new WP_REST_Response( array( 'status' => 'success', 'data' => array( 'customer_id' => $customer_id, 'amount_held' => $amount, 'new_available_balance' => $new_available, 'new_pending_balance' => $new_pending, 'currency' => get_woocommerce_currency_symbol(), 'message' => 'Funds successfully held for assessment.' ) ), 200 );
     }
 
     /**
-     * Handles the request to release held funds (move from pending back to available).
-     * @param WP_REST_Request $request
-     * @return WP_REST_Response
+     * Handles the API request to release held funds.
      */
-    public static function handle_release_balance_request( WP_REST_Request $request ) {
+    public static function handle_release_balance_request( $request ) {
         IMV_API_Logger::log( '====== New /release-balance Request ======' );
         $phone_number = sanitize_text_field( $request->get_param('phone') );
         $amount = floatval( $request->get_param('amount') );
-
-        if ( empty( $phone_number ) || ! is_numeric( $amount ) || $amount <= 0 ) {
-            return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Phone number and a positive amount are required.' ), 400 );
-        }
-
+        if ( empty( $phone_number ) || ! is_numeric( $amount ) || $amount <= 0 ) { return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Phone number and a positive amount are required.' ), 400 ); }
         $users = get_users( array( 'meta_key' => 'billing_phone', 'meta_value' => $phone_number, 'number' => 1, 'count_total' => false ) );
-        if ( empty( $users ) ) {
-            return new WP_REST_Response( array( 'status' => 'not_found', 'message' => 'Customer not found.' ), 404 );
-        }
-
+        if ( empty( $users ) ) { return new WP_REST_Response( array( 'status' => 'not_found', 'message' => 'Customer not found.' ), 404 ); }
         $customer_id = $users[0]->ID;
         $current_available = get_user_meta( $customer_id, 'imv_wallet_balance', true );
         $current_pending = get_user_meta( $customer_id, 'imv_pending_balance', true );
-
         $current_available = is_numeric($current_available) ? floatval($current_available) : 0;
         $current_pending = is_numeric($current_pending) ? floatval($current_pending) : 0;
-
-        if ( $current_pending < $amount ) {
-            return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Insufficient pending balance to release funds.' ), 400 );
-        }
-
+        if ( $current_pending < $amount ) { return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Insufficient pending balance to release funds.' ), 400 ); }
         $new_available = $current_available + $amount;
         $new_pending = $current_pending - $amount;
-
         update_user_meta( $customer_id, 'imv_wallet_balance', $new_available );
         update_user_meta( $customer_id, 'imv_pending_balance', $new_pending );
         IMV_API_Logger::log( "User #{$customer_id} released funds: {$amount}. New available: {$new_available}, New pending: {$new_pending}" );
-
-        return new WP_REST_Response( array(
-            'status' => 'success',
-            'data' => array(
-                'customer_id' => $customer_id,
-                'amount_released' => $amount,
-                'new_available_balance' => $new_available,
-                'new_pending_balance' => $new_pending,
-                'currency' => get_woocommerce_currency_symbol(),
-                'message' => 'Funds successfully released from pending.'
-            )
-        ), 200 );
+        return new WP_REST_Response( array( 'status' => 'success', 'data' => array( 'customer_id' => $customer_id, 'amount_released' => $amount, 'new_available_balance' => $new_available, 'new_pending_balance' => $new_pending, 'currency' => get_woocommerce_currency_symbol(), 'message' => 'Funds successfully released from pending.' ) ), 200 );
     }
 
     /**
-     * Handles the request to deduct from pending balance.
-     * @param WP_REST_Request $request
-     * @return WP_REST_Response
+     * Handles the API request to deduct from pending balance.
      */
-    public static function handle_deduct_pending_balance_request( WP_REST_Request $request ) {
+    public static function handle_deduct_pending_balance_request( $request ) {
         IMV_API_Logger::log( '====== New /deduct-pending Request ======' );
         $phone_number = sanitize_text_field( $request->get_param('phone') );
         $amount = floatval( $request->get_param('amount') );
-
-        if ( empty( $phone_number ) || ! is_numeric( $amount ) || $amount <= 0 ) {
-            return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Phone number and a positive amount are required.' ), 400 );
-        }
-
+        if ( empty( $phone_number ) || ! is_numeric( $amount ) || $amount <= 0 ) { return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Phone number and a positive amount are required.' ), 400 ); }
         $users = get_users( array( 'meta_key' => 'billing_phone', 'meta_value' => $phone_number, 'number' => 1, 'count_total' => false ) );
-        if ( empty( $users ) ) {
-            return new WP_REST_Response( array( 'status' => 'not_found', 'message' => 'Customer not found.' ), 404 );
-        }
-
+        if ( empty( $users ) ) { return new WP_REST_Response( array( 'status' => 'not_found', 'message' => 'Customer not found.' ), 404 ); }
         $customer_id = $users[0]->ID;
         $current_pending = get_user_meta( $customer_id, 'imv_pending_balance', true );
         $current_pending = is_numeric($current_pending) ? floatval($current_pending) : 0;
-
-        if ( $current_pending < $amount ) {
-            return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Insufficient pending balance to deduct this amount.' ), 400 );
-        }
-
+        if ( $current_pending < $amount ) { return new WP_REST_Response( array( 'status' => 'error', 'message' => 'Insufficient pending balance to deduct this amount.' ), 400 ); }
         $new_pending = $current_pending - $amount;
         update_user_meta( $customer_id, 'imv_pending_balance', $new_pending );
         IMV_API_Logger::log( "User #{$customer_id} deducted from pending: {$amount}. New pending balance: {$new_pending}" );
-
-        return new WP_REST_Response( array(
-            'status' => 'success',
-            'data' => array(
-                'customer_id' => $customer_id,
-                'amount_deducted' => $amount,
-                'new_pending_balance' => $new_pending,
-                'currency' => get_woocommerce_currency_symbol(),
-                'message' => 'Amount successfully deducted from pending balance.'
-            )
-        ), 200 );
+        return new WP_REST_Response( array( 'status' => 'success', 'data' => array( 'customer_id' => $customer_id, 'amount_deducted' => $amount, 'new_pending_balance' => $new_pending, 'currency' => get_woocommerce_currency_symbol(), 'message' => 'Amount successfully deducted from pending balance.' ) ), 200 );
     }
 
     /**
      * Deduct final order amount from customer's pending balance when a pending-assessment order is processed/completed.
-     * @param int      $order_id   The order ID.
-     * @param string   $old_status The old order status.
-     * @param string   $new_status The new order status.
-     * @param WC_Order $order      The order object.
      */
     public function deduct_from_pending_on_order_completion( $order_id, $old_status, $new_status, $order ) {
         if ( $old_status === 'pending-assessment' && in_array( $new_status, array( 'processing', 'completed' ) ) ) {
             $customer_id = $order->get_customer_id();
             $order_total = floatval( $order->get_total() );
             $estimated_pickup_cost = floatval( $order->get_meta( '_imv_estimated_pickup_cost', true ) );
-
-            if ( ! $customer_id ) {
-                IMV_API_Logger::log("Order #{$order_id}: Cannot deduct from wallet, no customer ID found.");
-                return;
-            }
-
+            if ( ! $customer_id ) { IMV_API_Logger::log("Order #{$order_id}: Cannot deduct from wallet, no customer ID found."); return; }
             $customer_pending_balance = get_user_meta( $customer_id, 'imv_pending_balance', true );
             $customer_pending_balance = is_numeric($customer_pending_balance) ? floatval($customer_pending_balance) : 0;
-
             if ( $order_total <= 0 ) {
                 IMV_API_Logger::log("Order #{$order_id}: Order total is zero or negative. Skipping wallet deduction.");
                 if ($estimated_pickup_cost > 0 && $customer_pending_balance >= $estimated_pickup_cost) {
@@ -366,18 +230,15 @@ class IMV_API_Wallet {
                     $current_available_balance = get_user_meta( $customer_id, 'imv_wallet_balance', true );
                     $current_available_balance = is_numeric($current_available_balance) ? floatval($current_available_balance) : 0;
                     $new_available_balance = $current_available_balance + $estimated_pickup_cost;
-
                     update_user_meta( $customer_id, 'imv_pending_balance', $new_pending_balance );
                     update_user_meta( $customer_id, 'imv_wallet_balance', $new_available_balance );
                     IMV_API_Logger::log("Order #{$order_id}: Zero total, released estimated cost {$estimated_pickup_cost} from pending to available for user #{$customer_id}. New pending: {$new_pending_balance}, New available: {$new_available_balance}");
                 }
                 return;
             }
-
             $amount_to_deduct_from_pending = 0;
             $amount_to_release_to_available = 0;
             $amount_to_deduct_from_available = 0;
-
             if ($estimated_pickup_cost > 0) {
                 if ($order_total <= $estimated_pickup_cost) {
                     $amount_to_deduct_from_pending = $order_total;
@@ -390,20 +251,16 @@ class IMV_API_Wallet {
                 $amount_to_deduct_from_pending = min($order_total, $customer_pending_balance);
                 $amount_to_deduct_from_available = $order_total - $amount_to_deduct_from_pending;
             }
-
             $new_pending_balance = $customer_pending_balance - $amount_to_deduct_from_pending;
             update_user_meta( $customer_id, 'imv_pending_balance', $new_pending_balance );
             IMV_API_Logger::log("Order #{$order_id}: Deducted {$amount_to_deduct_from_pending} from pending balance for user #{$customer_id}. New pending: {$new_pending_balance}");
-
             $current_available_balance = get_user_meta( $customer_id, 'imv_wallet_balance', true );
             $current_available_balance = is_numeric($current_available_balance) ? floatval($current_available_balance) : 0;
-
             if ($amount_to_release_to_available > 0) {
                 $new_available_balance = $current_available_balance + $amount_to_release_to_available;
                 update_user_meta( $customer_id, 'imv_wallet_balance', $new_available_balance );
                 IMV_API_Logger::log("Order #{$order_id}: Released excess {$amount_to_release_to_available} from pending to available for user #{$customer_id}. New available: {$new_available_balance}");
             }
-
             if ($amount_to_deduct_from_available > 0) {
                 if ($current_available_balance >= $amount_to_deduct_from_available) {
                     $new_available_balance = $current_available_balance - $amount_to_deduct_from_available;
@@ -417,60 +274,85 @@ class IMV_API_Wallet {
     }
 
     /**
-     * NEW FUNCTION: Add funds to wallet when a top-up product is purchased.
-     *
-     * This function checks completed orders for products in the 'Wallet Top-up' category.
-     * If found, it adds the value to the customer's wallet balance.
+     * Add funds to wallet when a simple top-up product order is completed.
      *
      * @param int $order_id The ID of the completed order.
      */
     public function add_funds_on_topup_order_completion( $order_id ) {
         $order = wc_get_order( $order_id );
-        if ( ! $order ) {
-            return;
+        if ( ! $order || $order->get_meta('_wallet_funds_added') ) {
+            return; // Exit if order not found or funds already added
         }
 
         $customer_id = $order->get_customer_id();
-
-        // Exit if there is no customer attached to the order.
-        if ( ! $customer_id ) {
-            return;
-        }
+        if ( ! $customer_id ) { return; }
 
         $items = $order->get_items();
         $total_topup_amount = 0;
 
         foreach ( $items as $item ) {
             $product_id = $item->get_product_id();
-            // We use a specific product category 'wallet-top-up' to identify these products.
-            if ( has_term( 'wallet-top-up', 'product_cat', $product_id ) ) {
-                // For bonus packages, we get the value from a custom field. Otherwise, use the product price.
+            // Check if the product is a top-up product and NOT a subscription
+            if ( has_term( 'wallet-top-up', 'product_cat', $product_id ) && ( ! function_exists('wcs_is_subscription') || ! wcs_is_subscription( $product_id ) ) ) {
                 $topup_value = get_post_meta( $product_id, '_wallet_topup_value', true );
                 if ( ! empty( $topup_value ) && is_numeric( $topup_value ) ) {
                     $total_topup_amount += floatval( $topup_value ) * $item->get_quantity();
                 } else {
-                    $total_topup_amount += $item->get_total(); // Use the line item total (price * quantity)
+                    $total_topup_amount += $item->get_total();
                 }
             }
         }
 
-        // If any top-up products were found, add the total amount to the wallet.
         if ( $total_topup_amount > 0 ) {
             $current_balance = get_user_meta( $customer_id, 'imv_wallet_balance', true );
-            $current_balance = is_numeric( $current_balance ) ? floatval( $current_balance ) : 0;
-            $new_balance = $current_balance + $total_topup_amount;
-
+            $new_balance = floatval( $current_balance ) + $total_topup_amount;
             update_user_meta( $customer_id, 'imv_wallet_balance', $new_balance );
-
-            // Add a note to the order for tracking purposes.
-            $order->add_order_note(
-                sprintf(
-                    __( 'Added %s to customer wallet. New balance: %s', 'imv-api' ),
-                    wc_price( $total_topup_amount ),
-                    wc_price( $new_balance )
-                )
-            );
+            $order->add_order_note( sprintf( __( 'Added %s to customer wallet. New balance: %s', 'imv-api' ), wc_price( $total_topup_amount ), wc_price( $new_balance ) ) );
+            $order->update_meta_data( '_wallet_funds_added', true ); // Mark order to prevent double-adding
+            $order->save();
             IMV_API_Logger::log( "Order #{$order_id}: Added {$total_topup_amount} to wallet for user #{$customer_id}. New balance: {$new_balance}" );
+        }
+    }
+
+    /**
+     * Add funds to wallet when a subscription payment is completed.
+     *
+     * @param WC_Subscription|int $subscription The subscription object or ID for which payment was completed.
+     */
+    public function add_funds_from_subscription( $subscription ) {
+        if ( is_numeric( $subscription ) ) {
+            $subscription = wcs_get_subscription( $subscription );
+        }
+
+        if ( ! $subscription ) { return; }
+
+        $customer_id = $subscription->get_customer_id();
+        if ( ! $customer_id ) {
+            IMV_API_Logger::log( "Subscription #{$subscription->get_id()}: No customer ID found. Cannot add funds." );
+            return;
+        }
+
+        $items = $subscription->get_items();
+        $total_topup_amount = 0;
+
+        foreach ( $items as $item ) {
+            $product_id = $item->get_product_id();
+            if ( has_term( 'wallet-top-up', 'product_cat', $product_id ) ) {
+                $topup_value = get_post_meta( $product_id, '_wallet_topup_value', true );
+                if ( ! empty( $topup_value ) && is_numeric( $topup_value ) ) {
+                    $total_topup_amount += floatval( $topup_value ) * $item->get_quantity();
+                } else {
+                    $total_topup_amount += $item->get_total();
+                }
+            }
+        }
+
+        if ( $total_topup_amount > 0 ) {
+            $current_balance = get_user_meta( $customer_id, 'imv_wallet_balance', true );
+            $new_balance = floatval( $current_balance ) + $total_topup_amount;
+            update_user_meta( $customer_id, 'imv_wallet_balance', $new_balance );
+            $subscription->add_order_note( sprintf( __( 'Added %s to customer wallet from subscription renewal. New balance: %s', 'imv-api' ), wc_price( $total_topup_amount ), wc_price( $new_balance ) ) );
+            IMV_API_Logger::log( "Subscription #{$subscription->get_id()}: Added {$total_topup_amount} to wallet for user #{$customer_id}. New balance: {$new_balance}" );
         }
     }
 }
