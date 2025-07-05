@@ -236,14 +236,23 @@ class IMV_API_Handlers {
             $payment_link = $order->get_checkout_payment_url();
             $order_id = $order->get_id();
 
-            // 6. Send the payment link to the customer via WhatsApp
+            // 6. Create a clean, bilingual message and send it via WhatsApp
+            $customer_name = $customer->first_name;
+            // Get the raw price without HTML tags
+            $clean_price = wp_strip_all_tags( wc_price( $order->get_total(), array('currency' => $order->get_currency()) ) );
+
             $message_body = sprintf(
-                __( "Hello %s, please use the following link to complete your wallet top-up of %s: %s", 'imv-api' ),
-                $customer->first_name,
-                $order->get_formatted_order_total(),
+                "مرحباً %s،\nلإتمام شحن محفظتك بقيمة %s، يرجى استخدام الرابط التالي:\n%s\n\n---\n\nHello %s,\nTo complete your wallet top-up of %s, please use the following link:\n%s",
+                $customer_name,
+                $clean_price,
+                $payment_link,
+                $customer_name,
+                $clean_price,
                 $payment_link
             );
-            IMV_API_Helpers::send_whatsapp_message( $phone, $message_body );
+
+            // Send the message with URL preview disabled for a cleaner look
+            IMV_API_Helpers::send_whatsapp_message( $phone, $message_body, false );
 
             $response_data = array(
                 'status'  => 'success',
