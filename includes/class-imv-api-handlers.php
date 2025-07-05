@@ -1,4 +1,6 @@
 <?php
+namespace Imv\WhatsAppApi;
+
 /**
  * Handles all custom REST API requests for customers, products, and orders.
  */

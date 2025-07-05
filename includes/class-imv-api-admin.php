@@ -1,4 +1,7 @@
 <?php
+
+namespace Imv\WhatsAppApi;
+
 /**
  * Handles the admin settings page for the plugin.
  */

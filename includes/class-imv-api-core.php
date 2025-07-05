@@ -1,4 +1,6 @@
 <?php
+namespace Imv\WhatsAppApi;
+
 /**
  * Core functionalities of the plugin.
  * This includes REST API endpoint registration, custom order status, and WhatsApp notifications.

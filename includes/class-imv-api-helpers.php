@@ -1,4 +1,6 @@
 <?php
+namespace Imv\WhatsAppApi;
+
 /**
  * Contains various helper functions used throughout the plugin.
  */

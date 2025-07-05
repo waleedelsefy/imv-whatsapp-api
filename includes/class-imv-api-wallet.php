@@ -1,4 +1,6 @@
 <?php
+namespace Imv\WhatsAppApi;
+
 /**
  * Handles all wallet-related functionalities:
  * - Wallet balance initialization for new users.

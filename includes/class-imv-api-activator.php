@@ -1,4 +1,6 @@
 <?php
+namespace Imv\WhatsAppApi;
+
 /**
  * Fired during plugin activation.
  *
