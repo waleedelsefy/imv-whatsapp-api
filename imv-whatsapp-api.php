@@ -3,7 +3,7 @@
  * Plugin Name:       IMV WhatsApp API
  * Plugin URI:        https://imvagency.net/
  * Description:       A custom WordPress plugin to integrate WooCommerce with WhatsApp, providing custom API endpoints, order status notifications, and an advanced customer wallet system with OTP login.
- * Version:           5.5
+ * Version:           5.6
  * Author:            waleed elsefy
  * Author URI:        https://imvagency.net/
  * License:           GPL v2 or later
@@ -88,8 +88,8 @@ final class IMV_WhatsApp_API_Main {
         $loader->add_action( 'wp_ajax_nopriv_imv_request_otp', $login_manager, 'ajax_request_otp' );
         $loader->add_action( 'wp_ajax_nopriv_imv_verify_otp_and_login', $login_manager, 'ajax_verify_otp_and_login' );
 
-        // ** UPDATED HOOK **: Use 'parse_request' to ensure auto-login runs before any page content is processed or redirects happen.
-        $loader->add_action( 'parse_request', $login_manager, 'handle_autologin_token_verification' );
+        // ** UPDATED HOOK **: Use 'wp_loaded' to run after WordPress is fully loaded but before headers and templates are sent.
+        $loader->add_action( 'wp_loaded', $login_manager, 'handle_autologin_token_verification' );
     }
 
     public function admin_notice_missing_woocommerce() {
