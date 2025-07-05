@@ -162,4 +162,15 @@ class IMV_API_Login_Form_Manager {
             exit;
         }
     }
+
+    /**
+     * NEW: Disables the mandatory login form on the order-pay page.
+     * This allows guests to pay for an order using the secure key, even if the order
+     * is assigned to a registered user.
+     */
+    public function disable_login_on_payment_page() {
+        if ( function_exists('is_checkout_pay_page') && is_checkout_pay_page() ) {
+            add_filter( 'woocommerce_login_form_required', '__return_false' );
+        }
+    }
 }
